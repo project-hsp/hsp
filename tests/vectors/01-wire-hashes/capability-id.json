@@ -1,0 +1,189 @@
+{
+  "spec_section": "HSP.md §3.1.1, §3.1.4",
+  "derivation": "capabilityId",
+  "vectors": [
+    {
+      "id": "empty-params-hides-sender",
+      "description": "Param-less capability id derivation (hides:sender:v1). Exercises the canonical(empty) → keccak256('') corner.",
+      "spec_refs": [
+        "HSP.md §3.1.1 capabilityId formula",
+        "HSP.md §3.5.1 hides:* baseline registry"
+      ],
+      "input": {
+        "namespace": "hides",
+        "name": "sender",
+        "version": "v1",
+        "params": []
+      },
+      "expected_output": {
+        "id": "0xc330e787727fffbfa515123e59f681c3af1a4ba313416eeaf8b7f4c17d717010"
+      }
+    },
+    {
+      "id": "empty-params-hides-amount",
+      "description": "Param-less capability id derivation (hides:amount:v1). Same shape as hides:sender, distinct expected id.",
+      "spec_refs": [
+        "HSP.md §3.1.1",
+        "HSP.md §3.5.1"
+      ],
+      "input": {
+        "namespace": "hides",
+        "name": "amount",
+        "version": "v1",
+        "params": []
+      },
+      "expected_output": {
+        "id": "0x44eeb335856922c11e19cdb83931a200aec3ee76462ed1dcf72ed39c5e689798"
+      }
+    },
+    {
+      "id": "single-string-param-attests-kyc-full",
+      "description": "Single string param (level=full). Exercises canonical(params) for one entry of type string.",
+      "spec_refs": [
+        "HSP.md §3.1.1",
+        "HSP.md §3.1.4 canonical params encoding",
+        "HSP.md §3.5.3 attests:kyc:v1"
+      ],
+      "input": {
+        "namespace": "attests",
+        "name": "kyc",
+        "version": "v1",
+        "params": [
+          {
+            "key": "level",
+            "type": "string",
+            "value": "full"
+          }
+        ]
+      },
+      "expected_output": {
+        "id": "0x232e9f37db21a178d9598188ea9294473f2f8897d058c7d382dd465e9d100469"
+      }
+    },
+    {
+      "id": "single-string-param-attests-kyc-basic",
+      "description": "Same shape as kyc-full but level=basic. Verifies that param values change the id (no hash collision).",
+      "spec_refs": [
+        "HSP.md §3.1.4",
+        "HSP.md §3.5.3"
+      ],
+      "input": {
+        "namespace": "attests",
+        "name": "kyc",
+        "version": "v1",
+        "params": [
+          {
+            "key": "level",
+            "type": "string",
+            "value": "basic"
+          }
+        ]
+      },
+      "expected_output": {
+        "id": "0xd2a0a12fa90ed75306d1d797e99df1c87dba601f7107bc987c644ac1ebc687ef"
+      }
+    },
+    {
+      "id": "single-string-param-discloses-viewing-key-auditor",
+      "description": "discloses:viewing-key:v1[viewer=auditor]. Carrier-vs-satisfier structural cap example.",
+      "spec_refs": [
+        "HSP.md §3.1.1",
+        "HSP.md §3.2.1 carrier-vs-satisfier",
+        "HSP.md §3.5.2"
+      ],
+      "input": {
+        "namespace": "discloses",
+        "name": "viewing-key",
+        "version": "v1",
+        "params": [
+          {
+            "key": "viewer",
+            "type": "string",
+            "value": "auditor"
+          }
+        ]
+      },
+      "expected_output": {
+        "id": "0x5e7e929d93bbcad8c44233e1612f4ab6575605e44c27061cd011d0f43b8192fd"
+      }
+    },
+    {
+      "id": "uint256-param-attests-risk-score-50",
+      "description": "Single uint256 param. Exercises canonical(params) for non-string types.",
+      "spec_refs": [
+        "HSP.md §3.1.4",
+        "HSP.md §3.5.3 attests:risk-score:v1"
+      ],
+      "input": {
+        "namespace": "attests",
+        "name": "risk-score",
+        "version": "v1",
+        "params": [
+          {
+            "key": "maxScore",
+            "type": "uint256",
+            "value": "50"
+          }
+        ]
+      },
+      "expected_output": {
+        "id": "0x6cab7527723804160995800bf23eda58b67e266a58aade1c6850be40063ed440"
+      }
+    },
+    {
+      "id": "two-params-sorted-by-key-bps-fixed",
+      "description": "Two-param deployment-extension example cap (org.example:fee-cap[bps,fixed]). Verifies key-sort: 'bps' < 'fixed' lexicographically, output stable regardless of input order.",
+      "spec_refs": [
+        "HSP.md §3.1.4 'Sort entries by key (bytes lexicographic)'",
+        "HSP.md §3.5 (deployment-namespaced extension capabilities)"
+      ],
+      "input": {
+        "namespace": "org.example",
+        "name": "fee-cap",
+        "version": "v1",
+        "params": [
+          {
+            "key": "bps",
+            "type": "uint256",
+            "value": "30"
+          },
+          {
+            "key": "fixed",
+            "type": "uint256",
+            "value": "1000000"
+          }
+        ]
+      },
+      "expected_output": {
+        "id": "0x9df0cb11b84440c98dde705c4a29f73e4e2ae6ee6c8bc382d40c5c8d646f17e9"
+      }
+    },
+    {
+      "id": "two-params-input-reverse-order-same-id",
+      "description": "Same params as bps-fixed above but listed in reverse input order. Expected id MUST equal the previous fixture's — proves the runner sorts by key, not by input order.",
+      "spec_refs": [
+        "HSP.md §3.1.4 sort-by-key invariant"
+      ],
+      "input": {
+        "namespace": "org.example",
+        "name": "fee-cap",
+        "version": "v1",
+        "params": [
+          {
+            "key": "fixed",
+            "type": "uint256",
+            "value": "1000000"
+          },
+          {
+            "key": "bps",
+            "type": "uint256",
+            "value": "30"
+          }
+        ]
+      },
+      "expected_output": {
+        "id": "0x9df0cb11b84440c98dde705c4a29f73e4e2ae6ee6c8bc382d40c5c8d646f17e9"
+      }
+    }
+  ]
+}

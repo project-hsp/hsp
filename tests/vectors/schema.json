@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://hsp.dev/tests/vectors/schema.json",
+  "title": "HSP Conformance Vector File",
+  "description": "Schema for fixture files under tests/vectors/. Every fixture file MUST conform.",
+  "type": "object",
+  "required": ["spec_section", "derivation", "vectors"],
+  "additionalProperties": false,
+  "properties": {
+    "spec_section": {
+      "type": "string",
+      "description": "The single normative section a reader should cross-reference."
+    },
+    "derivation": {
+      "type": "string",
+      "enum": [
+        "mandateHash",
+        "receiptHash",
+        "requiredCapabilitiesHash",
+        "capabilityId"
+      ]
+    },
+    "vectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/Vector" }
+    }
+  },
+  "definitions": {
+    "Vector": {
+      "type": "object",
+      "required": ["id", "description", "spec_refs", "input"],
+      "additionalProperties": false,
+      "properties": {
+        "id":              { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$" },
+        "description":     { "type": "string", "minLength": 1 },
+        "spec_refs":       { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "input":           { "type": "object" },
+        "expected_output": { "type": "object" }
+      }
+    }
+  }
+}

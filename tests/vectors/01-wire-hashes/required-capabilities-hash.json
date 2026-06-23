@@ -1,0 +1,110 @@
+{
+  "spec_section": "HSP.md §3.1.3",
+  "derivation": "requiredCapabilitiesHash",
+  "vectors": [
+    {
+      "id": "empty-set-yields-zero",
+      "description": "Empty capability set MUST yield bytes32(0). Marks a trivial-public payment (per receipt.md §6).",
+      "spec_refs": [
+        "HSP.md §3.1.3 'bytes32(0) if canon is empty'",
+        "HSP.md §2.1.2 requiredCapabilitiesHash field doc",
+        "primitives/receipt.md §6 trivial-public payment handling"
+      ],
+      "input": {
+        "capabilities": []
+      },
+      "expected_output": {
+        "hash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "id": "single-cap-hides-amount",
+      "description": "Single capability (hides:amount:v1). Computes keccak256(abi.encode(bytes32[1])) over the single id.",
+      "spec_refs": [
+        "HSP.md §3.1.3 keccak256(abi.encode(bytes32[]))"
+      ],
+      "input": {
+        "_inline_capability_ids": [
+          { "namespace": "hides", "name": "amount", "version": "v1", "params": [] }
+        ],
+        "_note": "When _inline_capability_ids is present, the runner computes each id via the capabilityId derivation and uses the inline order as the wire order. This keeps fixtures readable without parallel placeholder arrays."
+      },
+      "expected_output": {
+        "hash": "0x53a2f86dfb4fcd6989631f7067d2c16d41684623886ee813f361af24fd98e5b9"
+      }
+    },
+    {
+      "id": "two-caps-canonical-order",
+      "description": "Two-cap set in inline-declaration order: [hides:sender, hides:amount]. The runner canonicalizes (dedupe + bytes32 ascending sort) before hashing, so the wire order shown here is descriptive only.",
+      "spec_refs": [
+        "HSP.md §3.1.3 'sort lexicographically as bytes32 (ascending byte order)'"
+      ],
+      "input": {
+        "_inline_capability_ids": [
+          { "namespace": "hides", "name": "sender", "version": "v1", "params": [] },
+          { "namespace": "hides", "name": "amount", "version": "v1", "params": [] }
+        ]
+      },
+      "expected_output": {
+        "hash": "0xc78f66c09555a93b482c3465b7c4c9d0d211cef542c11dc47e572bfc17a5a83f"
+      }
+    },
+    {
+      "id": "two-caps-reverse-order-same-hash",
+      "description": "Same two caps as 'two-caps-canonical-order' but listed in reversed inline order: [hides:amount, hides:sender]. The recomputed hash MUST equal the previous vector's hash, proving canonicalization is verifier-side and wire order is irrelevant.",
+      "spec_refs": [
+        "HSP.md §3.1.3 'Wire form is unconstrained'",
+        "HSP.md §5.1 step 3 'Wire array order and duplicates are tolerated by construction'"
+      ],
+      "input": {
+        "_inline_capability_ids": [
+          { "namespace": "hides", "name": "amount", "version": "v1", "params": [] },
+          { "namespace": "hides", "name": "sender", "version": "v1", "params": [] }
+        ]
+      },
+      "expected_output": {
+        "hash": "0xc78f66c09555a93b482c3465b7c4c9d0d211cef542c11dc47e572bfc17a5a83f"
+      }
+    },
+    {
+      "id": "duplicates-deduped",
+      "description": "Three entries with one cap appearing twice on the wire: [hides:sender, hides:amount, hides:sender]. Canonicalization MUST deduplicate, yielding the same hash as the no-dup case.",
+      "spec_refs": [
+        "HSP.md §3.1.3 step 2 'Deduplicate (keep one copy of each bytes32 value)'"
+      ],
+      "input": {
+        "_inline_capability_ids": [
+          { "namespace": "hides", "name": "sender", "version": "v1", "params": [] },
+          { "namespace": "hides", "name": "amount", "version": "v1", "params": [] },
+          { "namespace": "hides", "name": "sender", "version": "v1", "params": [] }
+        ]
+      },
+      "expected_output": {
+        "hash": "0xc78f66c09555a93b482c3465b7c4c9d0d211cef542c11dc47e572bfc17a5a83f"
+      }
+    },
+    {
+      "id": "three-caps-mixed-namespaces",
+      "description": "Realistic mandate: hides:amount:v1 + attests:kyc:v1[level=full] + attests:sanctions:v1. Exercises mixed-namespace canonicalization across three different cap shapes (param-less hides, param-less attests, parameterized attests).",
+      "spec_refs": [
+        "HSP.md §3.1.3",
+        "HSP.md §3.2 namespace partition"
+      ],
+      "input": {
+        "_inline_capability_ids": [
+          { "namespace": "attests", "name": "sanctions", "version": "v1", "params": [] },
+          { "namespace": "hides",   "name": "amount",    "version": "v1", "params": [] },
+          {
+            "namespace": "attests",
+            "name": "kyc",
+            "version": "v1",
+            "params": [ { "key": "level", "type": "string", "value": "full" } ]
+          }
+        ]
+      },
+      "expected_output": {
+        "hash": "0xf41267bd3534065d2fe0c8f7cf96267d0d53eb45cca35a1ab2776f8e7b604781"
+      }
+    }
+  ]
+}

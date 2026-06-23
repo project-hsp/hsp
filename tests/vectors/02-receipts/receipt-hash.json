@@ -1,0 +1,182 @@
+{
+  "spec_section": "HSP.md §2.4.2",
+  "derivation": "receiptHash",
+  "vectors": [
+    {
+      "id": "public-settled-seq0",
+      "description": "SETTLED (outcome=1) first emission (seq=0) for the trivial-public mandate; single canonical adapter instance (adapterInstanceKey=0). mandateHash reuses mandate-hash#public-payment-no-caps-no-authz to cross-link the two packs. adapterId = keccak256(\"adapter:evm-transfer\"), proofSchemaId = keccak256(\"evm-transfer.proof.v1\") — the real ids the M1 public adapter registers.",
+      "spec_refs": [
+        "HSP.md §2.4.2 RECEIPT_PREIMAGE_TYPEHASH",
+        "HSP.md §2.2.1 Receipt (9 fields)",
+        "HSP.md §2.2.2 Outcome"
+      ],
+      "input": {
+        "domain": {
+          "name": "HSP",
+          "version": "1",
+          "chainId": 8453,
+          "verifyingContract": "0x0000000000000000000000000000000000000001"
+        },
+        "receipt": {
+          "mandateHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
+          "adapterId": "0xeeb081d6b4a5739edc5ce9a3ec05dcf768309684d7f3ebf29100f07ba89bb1b6",
+          "adapterInstanceKey": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "seq": 0,
+          "outcome": 1,
+          "settledAt": 1714000700,
+          "proofSchemaId": "0xe8e90ba04c897d6cef649e8914cb250e2d10a0dc5f7955b4fe8547dada5ab14f",
+          "adapterProof": "0xdeadbeef"
+        }
+      },
+      "expected_output": {
+        "hash": "0x29e0e7a390fc0f69d25d2174042fca39e56e45d4da1e80fdbc0524ae2670c0b0"
+      }
+    },
+    {
+      "id": "attempted-seq0",
+      "description": "ATTEMPTED (outcome=0) non-terminal first emission (seq=0). Same mandate/adapter as public-settled-seq0; differs only in outcome and adapterProof, so receiptHash MUST differ.",
+      "spec_refs": [
+        "HSP.md §2.4.2",
+        "HSP.md §2.2.2 Outcome (ATTEMPTED)"
+      ],
+      "input": {
+        "domain": {
+          "name": "HSP",
+          "version": "1",
+          "chainId": 8453,
+          "verifyingContract": "0x0000000000000000000000000000000000000001"
+        },
+        "receipt": {
+          "mandateHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
+          "adapterId": "0xeeb081d6b4a5739edc5ce9a3ec05dcf768309684d7f3ebf29100f07ba89bb1b6",
+          "adapterInstanceKey": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "seq": 0,
+          "outcome": 0,
+          "settledAt": 1714000650,
+          "proofSchemaId": "0xe8e90ba04c897d6cef649e8914cb250e2d10a0dc5f7955b4fe8547dada5ab14f",
+          "adapterProof": "0xabcdef"
+        }
+      },
+      "expected_output": {
+        "hash": "0xee2b8972ef70c01243387d20169728a1618fe1dda461ebd7bbcd95ee7cec6d09"
+      }
+    },
+    {
+      "id": "failed-terminal-seq1",
+      "description": "FAILED (outcome=2) terminal emission at seq=1 (e.g. ATTEMPTED then FAILED). Reason bytes live inside adapterProof per §2.2.2.",
+      "spec_refs": [
+        "HSP.md §2.4.2",
+        "HSP.md §2.2.2 Outcome (FAILED)"
+      ],
+      "input": {
+        "domain": {
+          "name": "HSP",
+          "version": "1",
+          "chainId": 8453,
+          "verifyingContract": "0x0000000000000000000000000000000000000001"
+        },
+        "receipt": {
+          "mandateHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
+          "adapterId": "0xeeb081d6b4a5739edc5ce9a3ec05dcf768309684d7f3ebf29100f07ba89bb1b6",
+          "adapterInstanceKey": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "seq": 1,
+          "outcome": 2,
+          "settledAt": 1714000800,
+          "proofSchemaId": "0xe8e90ba04c897d6cef649e8914cb250e2d10a0dc5f7955b4fe8547dada5ab14f",
+          "adapterProof": "0x0bad"
+        }
+      },
+      "expected_output": {
+        "hash": "0x063a84d1e6937d4431f0b975b446396f34c01d76e54d1fc08224b18688f4adfe"
+      }
+    },
+    {
+      "id": "settled-then-disputed-seq2",
+      "description": "DISPUTED (outcome=3) terminal re-emission at seq=2 overturning a prior SETTLED (seq=1) on the same instance (§2.2.3 S3). settledAt reflects the new state.",
+      "spec_refs": [
+        "HSP.md §2.4.2",
+        "HSP.md §2.2.2 Outcome (DISPUTED)",
+        "HSP.md §2.2.3 S3"
+      ],
+      "input": {
+        "domain": {
+          "name": "HSP",
+          "version": "1",
+          "chainId": 8453,
+          "verifyingContract": "0x0000000000000000000000000000000000000001"
+        },
+        "receipt": {
+          "mandateHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
+          "adapterId": "0xeeb081d6b4a5739edc5ce9a3ec05dcf768309684d7f3ebf29100f07ba89bb1b6",
+          "adapterInstanceKey": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "seq": 2,
+          "outcome": 3,
+          "settledAt": 1714003000,
+          "proofSchemaId": "0xe8e90ba04c897d6cef649e8914cb250e2d10a0dc5f7955b4fe8547dada5ab14f",
+          "adapterProof": "0xcafe"
+        }
+      },
+      "expected_output": {
+        "hash": "0x5fcd982f121bd9f12a252416aab22b621de2f99a39a8f9588a8664a33b28d230"
+      }
+    },
+    {
+      "id": "empty-adapter-proof",
+      "description": "Empty adapterProof (0x). adapterProofHash MUST equal keccak256(\"\") = 0xc5d2…0470, exercising the D2 hash-of-empty-bytes corner.",
+      "spec_refs": [
+        "HSP.md §2.4.2 note D2"
+      ],
+      "input": {
+        "domain": {
+          "name": "HSP",
+          "version": "1",
+          "chainId": 8453,
+          "verifyingContract": "0x0000000000000000000000000000000000000001"
+        },
+        "receipt": {
+          "mandateHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
+          "adapterId": "0xeeb081d6b4a5739edc5ce9a3ec05dcf768309684d7f3ebf29100f07ba89bb1b6",
+          "adapterInstanceKey": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "seq": 0,
+          "outcome": 1,
+          "settledAt": 1714000700,
+          "proofSchemaId": "0xe8e90ba04c897d6cef649e8914cb250e2d10a0dc5f7955b4fe8547dada5ab14f",
+          "adapterProof": "0x"
+        }
+      },
+      "expected_output": {
+        "hash": "0x09f01e9de57b97735497250e4c89233abfd06e2f669b1f4868b545691a502513"
+      }
+    },
+    {
+      "id": "nonzero-instance-key",
+      "description": "Non-zero adapterInstanceKey = keccak256(\"anvil:31337\") (distinct runner of the same adapterId). Same other fields as public-settled-seq0 — confirms adapterInstanceKey is bound into receiptHash, so the same settlement under a different instance produces a different digest.",
+      "spec_refs": [
+        "HSP.md §2.4.2",
+        "HSP.md §2.2.1 adapterInstanceKey",
+        "HSP.md §6.1.6 adapterInstanceKey derivation"
+      ],
+      "input": {
+        "domain": {
+          "name": "HSP",
+          "version": "1",
+          "chainId": 8453,
+          "verifyingContract": "0x0000000000000000000000000000000000000001"
+        },
+        "receipt": {
+          "mandateHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
+          "adapterId": "0xeeb081d6b4a5739edc5ce9a3ec05dcf768309684d7f3ebf29100f07ba89bb1b6",
+          "adapterInstanceKey": "0x5cedd7a9b6101e4db341ed336c9f81627d2fd3a2b6d99682815c6022dc9536e1",
+          "seq": 0,
+          "outcome": 1,
+          "settledAt": 1714000700,
+          "proofSchemaId": "0xe8e90ba04c897d6cef649e8914cb250e2d10a0dc5f7955b4fe8547dada5ab14f",
+          "adapterProof": "0xfeed"
+        }
+      },
+      "expected_output": {
+        "hash": "0x8417a6a2faf064980123b930476d89bd1d9bd16d5231151304bd865c0da27722"
+      }
+    }
+  ]
+}

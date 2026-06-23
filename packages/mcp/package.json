@@ -1,0 +1,27 @@
+{
+  "name": "@hsp/mcp",
+  "version": "0.1.0",
+  "description": "HSP MCP server — lets AI agents quote, pay, track and verify HSP payments via @hsp/sdk (stdio transport, spend guards).",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hsp/core": "*",
+    "@hsp/sdk": "*",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "viem": "2.52.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.17",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3"
+  }
+}

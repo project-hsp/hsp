@@ -1,0 +1,359 @@
+/**
+ * HSPClient — payer-side one-call orchestration (plan M2, user need 4.b):
+ *
+ *   pay() = build MandateBody → sign (HSPSigner) → POST /payments
+ *         → broadcast the ERC-20 transfer FROM THE SAME ACCOUNT (wallet-settling:
+ *           Transfer.from MUST equal body.signer — the schema enforces it)
+ *         → wait for the tx to mine → POST /payments/:id/observe (retries 202)
+ *         → returns { paymentId, txHash, awaitSettled() }
+ *
+ * Stepwise primitives (buildMandateBody / register / broadcastTransfer /
+ * observe) are exposed for callers that want manual control (e.g. a browser
+ * flow where each wallet prompt is a separate user action).
+ */
+
+import {
+  createPublicClient,
+  http,
+  parseAbi,
+  parseUnits,
+  toHex,
+  type Address,
+  type Hex,
+} from 'viem';
+import { encodeAbiParameters } from 'viem';
+import { requiredCapabilitiesHash, type Attestation, type MandateBody, type SignedMandate } from '@hsp/core';
+import { eip712EoaSigner } from '@hsp/core/profiles/signer/eip712-eoa';
+import { resolveComplianceCaps, type ComplianceTag } from '@hsp/core/policy/compliance';
+import { toCaip2 } from '@hsp/core/x402/index';
+import { chainDomain, type ChainConfig } from '@hsp/core/chains/index';
+import {
+  signMandateBody,
+  signEip3009Authorization,
+  signerAddress,
+  walletClientFor,
+  type HSPSigner,
+  type Eip3009Authorization,
+} from './signer.js';
+import type { PaymentRequest } from './requirements.js';
+
+const ERC20_ABI = parseAbi(['function transfer(address to, uint256 amount) returns (bool)']);
+
+export interface HSPClientOptions {
+  coordinatorUrl: string;
+  signer: HSPSigner;
+  chain: ChainConfig;
+  /** Coordinator chain-registry name; defaults to chain.name. */
+  chainName?: string;
+  /** Bearer key for the Coordinator's write endpoints. */
+  apiKey?: string;
+  /** Mock-issuer base URL; required to use pay({ profile: { compliance } }). */
+  issuerUrl?: string;
+}
+
+/** Compliance profile. */
+export interface PayProfile {
+  compliance?: ComplianceTag[]; // e.g. ['kyc','sanctions']
+}
+
+export interface PayParams {
+  to: Address;
+  /** Base units (use parseAmount() for human amounts). */
+  amount: bigint;
+  token?: Address;
+  /** Unix seconds; default now + 1h. */
+  deadline?: number;
+  /** Capability ids to require (MVP public path: omit / []). */
+  capabilities?: Hex[];
+  /** Compliance profile → resolved to caps + fetched attestations (needs issuerUrl). */
+  profile?: PayProfile;
+  nonce?: Hex;
+}
+
+export interface PaymentSnapshot {
+  paymentId: Hex;
+  status: string;
+  [k: string]: unknown;
+}
+
+export interface PayHandle {
+  paymentId: Hex;
+  txHash: Hex;
+  status: string;
+  mandate: SignedMandate;
+  awaitSettled(opts?: { timeoutMs?: number; pollMs?: number }): Promise<PaymentSnapshot>;
+}
+
+const TERMINAL = new Set(['SETTLED', 'FAILED', 'DISPUTED', 'EXPIRED']);
+
+export class HSPClient {
+  constructor(private readonly opts: HSPClientOptions) {}
+
+  get address(): Address {
+    return signerAddress(this.opts.signer);
+  }
+
+  /** Human amount → base units using the chain's pinned stablecoin decimals. */
+  parseAmount(human: string): bigint {
+    return parseUnits(human, this.opts.chain.stablecoin.decimals);
+  }
+
+  buildMandateBody(p: PayParams): MandateBody {
+    const chain = this.opts.chain;
+    const caps = p.capabilities ?? [];
+    return {
+      nonce: p.nonce ?? toHex(crypto.getRandomValues(new Uint8Array(32))),
+      signer: {
+        profileId: eip712EoaSigner.profileIdHash,
+        payload: encodeAbiParameters([{ type: 'address' }], [this.address]),
+      },
+      recipient: { kind: 0, payload: encodeAbiParameters([{ type: 'address' }], [p.to]) },
+      token: p.token ?? chain.stablecoin.address,
+      amount: p.amount.toString(),
+      chainId: chain.chainId,
+      deadline: p.deadline ?? Math.floor(Date.now() / 1000) + 3600,
+      requiredCapabilitiesHash: requiredCapabilitiesHash(caps),
+    };
+  }
+
+  async signMandate(p: PayParams): Promise<{ mandate: SignedMandate; mandateHash: Hex }> {
+    const body = this.buildMandateBody(p);
+    const { mandateHash, signerProof } = await signMandateBody(this.opts.signer, chainDomain(this.opts.chain), body);
+    return { mandate: { body, signerProof, requiredCapabilities: p.capabilities ?? [] }, mandateHash };
+  }
+
+  async register(mandate: SignedMandate, attestations: Attestation[] = []): Promise<{ paymentId: Hex; status: string }> {
+    const r = await this.http('POST', '/payments', { chain: this.chainName, mandate, attestations });
+    if (r.status !== 200 && r.status !== 201) {
+      throw new Error(`register failed: HTTP ${r.status} ${JSON.stringify(r.json)}`);
+    }
+    return r.json as { paymentId: Hex; status: string };
+  }
+
+  /** Fetch attestations from the configured mock issuer for the given tags. */
+  async fetchComplianceAttestations(tags: ComplianceTag[]): Promise<Attestation[]> {
+    if (!this.opts.issuerUrl) throw new Error('pay({ profile: { compliance } }) requires HSPClient issuerUrl');
+    const base = this.opts.issuerUrl.replace(/\/$/, '');
+    const out: Attestation[] = [];
+    for (const tag of tags) {
+      const path = tag === 'sanctions' ? '/attest/sanctions' : '/attest/kyc';
+      const body = tag === 'sanctions' ? { subject: this.address } : { subject: this.address, level: tag === 'kyc-basic' ? 'basic' : 'full' };
+      const res = await fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error(`issuer ${tag} failed: HTTP ${res.status}`);
+      const j = (await res.json()) as { attestation: Attestation };
+      out.push(j.attestation);
+    }
+    return out;
+  }
+
+  /** Broadcast the ERC-20 transfer from the signer's own wallet; returns txHash. */
+  async broadcastTransfer(p: { to: Address; amount: bigint; token?: Address }): Promise<Hex> {
+    const chain = this.opts.chain;
+    const wallet = walletClientFor(this.opts.signer, chain.rpcUrl, chain.chainId);
+    const account = wallet.account;
+    if (!account) throw new Error('wallet client has no account');
+    const txHash = await wallet.writeContract({
+      address: p.token ?? chain.stablecoin.address,
+      abi: ERC20_ABI,
+      functionName: 'transfer',
+      args: [p.to, p.amount],
+      account,
+      chain: wallet.chain,
+    });
+    const publicClient = createPublicClient({ transport: http(chain.rpcUrl) });
+    await publicClient.waitForTransactionReceipt({ hash: txHash });
+    return txHash;
+  }
+
+  /** POST observe; retries while the Coordinator answers 202 (pending/confirming). */
+  async observe(
+    paymentId: Hex,
+    txHash: Hex,
+    opts: { retries?: number; delayMs?: number } = {},
+  ): Promise<{ status: string }> {
+    const retries = opts.retries ?? 30;
+    const delayMs = opts.delayMs ?? 2000;
+    const body = { txHash };
+    for (let i = 0; i <= retries; i++) {
+      const r = await this.http('POST', `/payments/${paymentId}/observe`, body);
+      if (r.status === 202) {
+        await new Promise((res) => setTimeout(res, delayMs));
+        continue;
+      }
+      if (r.status !== 200) throw new Error(`observe failed: HTTP ${r.status} ${JSON.stringify(r.json)}`);
+      return r.json as { status: string };
+    }
+    throw new Error('observe timed out waiting for the tx to become observable');
+  }
+
+  /** One call: sign → register → broadcast → observe → handle. */
+  async pay(p: PayParams | PaymentRequest): Promise<PayHandle> {
+    let base: PayParams;
+    if ('amount' in p && typeof p.amount === 'string') {
+      // a payee-built PaymentRequest — honor its chain + advertised required caps
+      const pr = p as PaymentRequest;
+      if (pr.chainId !== this.opts.chain.chainId) {
+        throw new Error(`PaymentRequest targets chainId ${pr.chainId}, but this client is on ${this.opts.chain.chainId}`);
+      }
+      const required = pr.requirements?.policyRequiredCapabilities ?? [];
+      base = {
+        to: pr.to,
+        amount: BigInt(pr.amount),
+        ...(pr.token ? { token: pr.token } : {}),
+        ...(required.length ? { capabilities: required as Hex[] } : {}),
+      };
+    } else {
+      base = p as PayParams;
+    }
+    const params: PayParams = { ...base };
+    // compliance profile → extra caps signed into the mandate + fetched attestations
+    let attestations: Attestation[] = [];
+    if (params.profile?.compliance?.length) {
+      const ccaps = resolveComplianceCaps(params.profile.compliance);
+      params.capabilities = [...(params.capabilities ?? []), ...ccaps.map((c) => c.id)];
+      attestations = await this.fetchComplianceAttestations(params.profile.compliance);
+    }
+    const { mandate, mandateHash } = await this.signMandate(params);
+    const reg = await this.register(mandate, attestations);
+    const txHash = await this.broadcastTransfer({
+      to: params.to,
+      amount: params.amount,
+      ...(params.token ? { token: params.token } : {}),
+    });
+    const obs = await this.observe(reg.paymentId, txHash);
+    void mandateHash;
+    return {
+      paymentId: reg.paymentId,
+      txHash,
+      status: obs.status,
+      mandate,
+      awaitSettled: (o) => this.awaitTerminal(reg.paymentId, o),
+    };
+  }
+
+  /**
+   * Pay a merchant directly via a conformant x402 Facilitator (real Coinbase x402
+   * v2, self-settling). The payer signs BOTH an HSP mandate AND an EIP-3009
+   * exact-EVM authorization; one `POST /settle` (carrying the mandate in
+   * `extensions.hsp`) submits the client-signed `transferWithAuthorization` — YOUR
+   * funds move, zero gas for you — and bridges it to a verifiable HSP Receipt at the
+   * Coordinator. Requires a FiatTokenV2-style token (exposes `name()`/`version()`).
+   * To pay an x402-GATED HTTP resource instead, use `fetchWithX402` (SDK x402 module).
+   *
+   * With `profile.compliance`, the matching capabilities are signed into the mandate
+   * and the attestations are fetched + registered with the Coordinator DIRECTLY
+   * (`POST /payments` — they are verification evidence for the Coordinator, never sent
+   * to the facilitator). The facilitator only settles + submits the receipt.
+   */
+  async payX402(p: {
+    merchant: Address;
+    facilitatorUrl: string;
+    amount: bigint;
+    token?: Address;
+    deadline?: number;
+    /** Compliance profile → caps signed into the mandate + attestations fetched (needs issuerUrl). */
+    profile?: PayProfile;
+  }): Promise<PayHandle> {
+    const chain = this.opts.chain;
+    const tokenAddr = p.token ?? chain.stablecoin.address;
+    const deadline = p.deadline ?? Math.floor(Date.now() / 1000) + 3600;
+
+    // compliance: caps signed into the mandate; attestations go to the COORDINATOR (not the facilitator)
+    let attestations: Attestation[] = [];
+    let capabilities: Hex[] | undefined;
+    if (p.profile?.compliance?.length) {
+      capabilities = resolveComplianceCaps(p.profile.compliance).map((c) => c.id);
+      attestations = await this.fetchComplianceAttestations(p.profile.compliance);
+    }
+    const { mandate, mandateHash } = await this.signMandate({ to: p.merchant, amount: p.amount, token: tokenAddr, deadline, ...(capabilities ? { capabilities } : {}) });
+    // the payer owns registration: mandate (+ attestations) go straight to the Coordinator
+    await this.register(mandate, attestations);
+
+    // read the token's EIP-712 domain (FiatTokenV2 name()/version())
+    const publicClient = createPublicClient({ transport: http(chain.rpcUrl) });
+    const erc20Meta = parseAbi(['function name() view returns (string)', 'function version() view returns (string)']);
+    const [tokenName, tokenVersion] = await Promise.all([
+      publicClient.readContract({ address: tokenAddr, abi: erc20Meta, functionName: 'name' }) as Promise<string>,
+      publicClient.readContract({ address: tokenAddr, abi: erc20Meta, functionName: 'version' }) as Promise<string>,
+    ]).catch(() => {
+      throw new Error(`token ${tokenAddr} does not expose name()/version() — x402 exact-EVM needs a FiatTokenV2-style token`);
+    });
+
+    // sign the EIP-3009 authorization (client-pull settlement)
+    const auth: Eip3009Authorization = { from: this.address, to: p.merchant, value: p.amount, validAfter: 0, validBefore: deadline, nonce: toHex(crypto.getRandomValues(new Uint8Array(32))) };
+    const signature = await signEip3009Authorization(this.opts.signer, { name: tokenName, version: tokenVersion, chainId: chain.chainId, address: tokenAddr }, auth);
+
+    // conformant x402 v2 settle request, HSP mandate in extensions.hsp
+    const requirements = { scheme: 'exact', network: toCaip2(chain.chainId), asset: tokenAddr, amount: p.amount.toString(), payTo: p.merchant, maxTimeoutSeconds: 60, extra: { name: tokenName, version: tokenVersion } };
+    const paymentPayload = {
+      x402Version: 2,
+      accepted: requirements,
+      payload: { signature, authorization: { from: auth.from, to: auth.to, value: auth.value.toString(), validAfter: '0', validBefore: String(deadline), nonce: auth.nonce } },
+      extensions: { hsp: { mandate } },
+    };
+    const fbase = p.facilitatorUrl.replace(/\/$/, '');
+    const settle = (await (
+      await fetch(`${fbase}/settle`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ x402Version: 2, paymentPayload, paymentRequirements: requirements }) })
+    ).json()) as {
+      success?: boolean;
+      transaction?: Hex;
+      errorReason?: string;
+      extensions?: { hsp?: { status?: string; receiptSubmitted?: boolean; bridged?: boolean; error?: string; decision?: { ok?: boolean; errorCode?: string } } };
+    };
+    if (!settle.success) throw new Error(`x402 settle failed: ${settle.errorReason ?? 'unknown'}`);
+
+    // the on-chain settlement happened; surface the HSP bridge result faithfully (never assume SETTLED)
+    const hsp = settle.extensions?.hsp;
+    if (!hsp || hsp.receiptSubmitted !== true) {
+      throw new Error(`x402 settled on-chain (tx ${settle.transaction}) but the HSP receipt was not submitted to the Coordinator: ${hsp?.error ?? JSON.stringify(hsp)}`);
+    }
+    if (hsp.decision?.ok === false) {
+      throw new Error(`x402 settled on-chain (tx ${settle.transaction}) but the Coordinator rejected the receipt: ${hsp.decision.errorCode ?? 'unknown'}`);
+    }
+
+    return {
+      paymentId: mandateHash,
+      txHash: (settle.transaction ?? `0x${'00'.repeat(32)}`) as Hex,
+      status: hsp.status ?? 'SETTLED',
+      mandate,
+      awaitSettled: (o) => this.awaitTerminal(mandateHash, o),
+    };
+  }
+
+  async getPayment(paymentId: Hex): Promise<PaymentSnapshot> {
+    const r = await this.http('GET', `/payments/${paymentId}`);
+    if (r.status !== 200) throw new Error(`getPayment failed: HTTP ${r.status}`);
+    return r.json as PaymentSnapshot;
+  }
+
+  private async awaitTerminal(paymentId: Hex, opts: { timeoutMs?: number; pollMs?: number } = {}): Promise<PaymentSnapshot> {
+    const timeoutMs = opts.timeoutMs ?? 120_000;
+    const pollMs = opts.pollMs ?? 1500;
+    const start = Date.now();
+    for (;;) {
+      const snap = await this.getPayment(paymentId);
+      if (TERMINAL.has(snap.status)) return snap;
+      if (Date.now() - start > timeoutMs) throw new Error(`awaitSettled timed out (last status: ${snap.status})`);
+      await new Promise((res) => setTimeout(res, pollMs));
+    }
+  }
+
+  private get chainName(): string {
+    return this.opts.chainName ?? this.opts.chain.name;
+  }
+
+  private async http(method: string, path: string, body?: unknown): Promise<{ status: number; json: unknown }> {
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (this.opts.apiKey) headers.authorization = `Bearer ${this.opts.apiKey}`;
+    const init: RequestInit = { method, headers };
+    if (body !== undefined) init.body = JSON.stringify(body);
+    const res = await fetch(`${this.opts.coordinatorUrl.replace(/\/$/, '')}${path}`, init);
+    let json: unknown = null;
+    try {
+      json = await res.json();
+    } catch {
+      /* non-JSON */
+    }
+    return { status: res.status, json };
+  }
+}

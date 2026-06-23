@@ -1,0 +1,37 @@
+/**
+ * @hsp/sdk — developer-facing surface over @hsp/core + the Coordinator API.
+ *
+ *   payer:         new HSPClient({ coordinatorUrl, signer, chain }).pay({ to, amount })
+ *   relying party: new HSPVerifier({ chain, adapterAddress }).verify(m, r)
+ *                  (payee shipping goods, auditor, platform — anyone who acts on a payment)
+ *   payee invoice: buildPaymentRequest(chain, { to, amount })
+ */
+
+export { HSPClient, type HSPClientOptions, type PayParams, type PayProfile, type PayHandle, type PaymentSnapshot } from './client.js';
+export { HSPVerifier, type PinnedTrustConfig } from './verifier.js';
+export {
+  resolveComplianceCaps,
+  buildCompliancePolicy,
+  buildComplianceRequirements,
+  type ComplianceTag,
+  type TrustedIssuer,
+  type CompliancePolicyOpts,
+} from '@hsp/core/policy/compliance';
+export {
+  signMandateBody,
+  signerAddress,
+  mandateTypedData,
+  walletClientFor,
+  type HSPSigner,
+} from './signer.js';
+export { fetchRequirements, buildPaymentRequest, type MandateRequirements, type PaymentRequest } from './requirements.js';
+export {
+  x402Gate,
+  buildPaymentRequired,
+  fetchWithX402,
+  wrapFetchWithX402,
+  type X402GateOptions,
+  type X402GateResult,
+  type X402PayerOptions,
+  type X402PaidResponse,
+} from './x402.js';

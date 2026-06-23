@@ -1,0 +1,118 @@
+{
+  "spec_section": "HSP.md §2.4.1",
+  "derivation": "mandateHash",
+  "vectors": [
+    {
+      "id": "public-payment-no-caps",
+      "description": "Trivial public payment over the 8-field MandateBody.",
+      "spec_refs": [
+        "HSP.md §2.4.1 MANDATE_BODY_TYPEHASH",
+        "HSP.md §2.4.3 nested type ordering",
+        "HSP-examples.md §1 (Trivial Public Payment)"
+      ],
+      "input": {
+        "domain": {
+          "name": "HSP",
+          "version": "1",
+          "chainId": 8453,
+          "verifyingContract": "0x0000000000000000000000000000000000000001"
+        },
+        "body": {
+          "nonce": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01",
+          "signer": {
+            "profileId": "0x86d11d3a72d8e2d7d8c9bb9b9c2d8e9d7e6c5b4a39281706050403020100ffee",
+            "payload": "0x000000000000000000000000c0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ff"
+          },
+          "recipient": {
+            "kind": 0,
+            "payload": "0x000000000000000000000000beefbeefbeefbeefbeefbeefbeefbeefbeefbeef"
+          },
+          "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "amount": "9990000",
+          "chainId": 8453,
+          "deadline": 1714000600,
+          "requiredCapabilitiesHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "expected_output": {
+        "hash": "0x153ee68c5fae98b83b99969f3a3ed38b1b392a14aa76caa419d64e25a1623575"
+      }
+    },
+    {
+      "id": "with-required-caps",
+      "description": "Non-empty requiredCapabilities set bound via requiredCapabilitiesHash.",
+      "spec_refs": [
+        "HSP.md §2.4.1",
+        "HSP.md §3.1.3 requiredCapabilitiesHash"
+      ],
+      "input": {
+        "domain": {
+          "name": "HSP",
+          "version": "1",
+          "chainId": 1,
+          "verifyingContract": "0x0000000000000000000000000000000000000002"
+        },
+        "body": {
+          "nonce": "0x00000000000000000000000000000000000000000000000000000000deadbeef",
+          "signer": {
+            "profileId": "0x86d11d3a72d8e2d7d8c9bb9b9c2d8e9d7e6c5b4a39281706050403020100ffee",
+            "payload": "0x000000000000000000000000a11ce00000000000000000000000000000000a11"
+          },
+          "recipient": {
+            "kind": 0,
+            "payload": "0x000000000000000000000000bobbobbobbobbobbobbobbobbobbobbobbobbob0"
+          },
+          "token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "amount": "100000000",
+          "chainId": 1,
+          "deadline": 1714100900,
+          "requiredCapabilitiesHash": "0xfeed0123feed0123feed0123feed0123feed0123feed0123feed0123feed0123"
+        }
+      },
+      "expected_output": {
+        "hash": "0x12203a7c542d501998e27e5510bba31818bf68efda2895dbbb6ea563552a1715"
+      }
+    },
+    {
+      "id": "commitment-recipient-stealth-payment",
+      "description": "Recipient kind = COMMITMENT (1). Exercises the COMMITMENT recipient encoding (commitment + derivationContext).",
+      "spec_refs": [
+        "HSP.md §2.1.4 Recipient",
+        "HSP.md §2.4.1"
+      ],
+      "input": {
+        "domain": {
+          "name": "HSP",
+          "version": "1",
+          "chainId": 1,
+          "verifyingContract": "0x0000000000000000000000000000000000000003"
+        },
+        "body": {
+          "nonce": "0x00000000000000000000000000000000000000000000000000000000c0ffee01",
+          "signer": {
+            "profileId": "0x86d11d3a72d8e2d7d8c9bb9b9c2d8e9d7e6c5b4a39281706050403020100ffee",
+            "payload": "0x000000000000000000000000d00d000000000000000000000000000000000d00"
+          },
+          "recipient": {
+            "kind": 1,
+            "payload": "0x_COMMITMENT_PAYLOAD_PLACEHOLDER_"
+          },
+          "token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "amount": "50000000",
+          "chainId": 1,
+          "deadline": 1714200900,
+          "requiredCapabilitiesHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "_inline_recipient_payload": {
+          "type": "abi.encode(bytes32 commitment, bytes32 derivationContext)",
+          "commitment": "0xc0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+          "derivationContext": "0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
+        },
+        "_note": "Runner pre-processes _inline_recipient_payload via abi.encode(bytes32,bytes32) and substitutes into recipient.payload before computing the typed-data hash."
+      },
+      "expected_output": {
+        "hash": "0x2184984213ac7a0bcc9c3468b4a7631f5e90f769ba8271e2d2748891ec106aa3"
+      }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "//": "HSP MCP server registration example. Copy into your project's .mcp.json (or `claude mcp add hsp-pay -- npx tsx <repo>/packages/mcp/src/index.ts`). The agent key is DEMO-scoped: always set the spend caps.",
+  "mcpServers": {
+    "hsp-pay": {
+      "command": "npx",
+      "args": ["tsx", "packages/mcp/src/index.ts"],
+      "env": {
+        "HSP_COORDINATOR_URL": "http://127.0.0.1:8787",
+        "HSP_API_KEY": "your-team-key",
+        "HSP_CHAIN": "anvil-dev",
+        "HSP_STABLECOIN_ANVIL_DEV": "0xYOUR_TOKEN:MUSDC:6",
+        "HSP_AGENT_PRIVATE_KEY": "0xDEMO_SMALL_AMOUNT_KEY_ONLY",
+        "HSP_MAX_AMOUNT_BASE_UNITS": "10000000",
+        "HSP_DAILY_CAP_BASE_UNITS": "50000000",
+        "HSP_PINNED_ADAPTER_ADDRESS": "0xCOORDINATOR_ADAPTER_ADDRESS"
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@hsp/devkit",
+  "version": "0.1.0",
+  "description": "HSP adapter devkit — a conformance test runner + adapter template so hackathon teams can build, self-test, and register their own settlement adapters.",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "example": "tsx src/example.ts",
+    "template": "tsx template/run-conformance.ts"
+  },
+  "dependencies": {
+    "@hsp/core": "*",
+    "viem": "2.52.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.17",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3"
+  }
+}
