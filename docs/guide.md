@@ -253,7 +253,7 @@ chain to confirm the transfer and signs the verifiable `adapter:x402` receipt it
 | `GET /x402/info` | facilitator address, merchant domain, instance key, chain |
 | `GET /supported` | `{ kinds: [{ x402Version: 2, scheme: "exact", network }] }` |
 | `POST /verify` | `{ x402Version, paymentPayload, paymentRequirements }` → `VerifyResponse` (signature + amount/recipient/network/time-window checks; no chain I/O) |
-| `POST /settle` | same body → `SettleResponse` (submits `transferWithAuthorization`, returns the settlement `txHash`). Stock x402 — **no HSP bridge**; the payer (or the gate) hands the proof to the Coordinator's `POST /payments/:id/x402-settle`. |
+| `POST /settle` | same body → `SettleResponse` (submits `transferWithAuthorization`, returns the settlement `txHash`). Stock x402 — **no HSP bridge**; the payer (or the gate) hands the proof to the Coordinator's `POST /payments/:id/x402-observe`. |
 
 These are the standard x402 facilitator endpoints — a stock x402 resource server can call them.
 For a direct merchant payment you normally don't call them by hand: `client.payX402()` drives the
@@ -385,7 +385,7 @@ const handle = await client.payX402({
 
 The SDK signs the HSP mandate AND an EIP-3009 `TransferWithAuthorization`, settles **your** funds via
 one `POST /settle` to a stock facilitator (zero gas for you), then hands the EIP-3009 proof + txHash to
-the Coordinator (`POST /payments/:id/x402-settle`), which confirms the transfer on-chain and signs the
+the Coordinator (`POST /payments/:id/x402-observe`), which confirms the transfer on-chain and signs the
 verifiable `adapter:x402` receipt.
 
 **Pay an x402-gated HTTP resource** (`fetchWithX402`) — works against ANY conformant x402 server

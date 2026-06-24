@@ -298,7 +298,7 @@ export class HSPClient {
     // the COORDINATOR is the adapter:x402 operator: hand it the EIP-3009 proof + txHash so it reads
     // the chain, signs the adapter:x402 receipt, and verifies → SETTLED (never assume SETTLED).
     const merchantDomain = p.merchantDomain ?? (await this.facilitatorMerchantDomain(fbase));
-    const x402 = await this.http('POST', `/payments/${mandateHash}/x402-settle`, {
+    const x402 = await this.http('POST', `/payments/${mandateHash}/x402-observe`, {
       authorization, signature, tokenName, tokenVersion, txHash: settle.transaction, merchantDomain,
     });
     if (x402.status !== 200 && x402.status !== 201) {

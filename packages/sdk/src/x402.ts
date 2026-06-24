@@ -164,7 +164,7 @@ async function bridgeGateToHsp(
   const regJson = (await reg.json().catch(() => ({}))) as { paymentId?: Hex };
   if (!regJson.paymentId) return { bridged: false, error: 'mandate registration failed' };
   const ev = payload.payload as { signature: Hex; authorization: unknown };
-  const sub = await doFetch(`${base}/payments/${regJson.paymentId}/x402-settle`, {
+  const sub = await doFetch(`${base}/payments/${regJson.paymentId}/x402-observe`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
