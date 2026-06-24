@@ -68,7 +68,7 @@ You consume HSP through a small layered stack — pick the layer that fits:
 
 ```
   skills/hsp-verify — an AI skill: an agent verifies & reasons about HSP payments (no money)
-  @hsp/mcp          — MCP server (pure/key-less): agents verify / explain / build HSP objects
+  @hsp/mcp          — MCP server (pure/key-less): agents verify / explain / build + pay key-lessly (prepare → wallet MCP signs → submit)
   @hsp/sdk          — one-call pay() + independent verify()        ← most developers start here
   @hsp/devkit       — build + conformance-test your own adapter
   @hsp/core         — protocol primitives (types, capabilities, verifier, signer)
@@ -246,21 +246,29 @@ npm run template -w @hsp/devkit
 
 Two pieces help an AI agent work with HSP:
 
-- **`@hsp/mcp`** — a **pure, key-less** MCP server. It holds no private key and moves
-  no money; it gives an agent eight tools to *reason over* HSP — `hsp_verify` (run the
-  verifier), `hsp_explain` (the decision narrated), `hsp_inspect` (decode a
-  mandate/receipt/attestation), `hsp_capability` + `hsp_capability_diff` (the policy
-  language), `hsp_build_requirements` + `hsp_check_requirements` (what a payee demands),
-  and `hsp_build_mandate` (an unsigned mandate + its hash). **To actually pay, the agent
-  uses `@hsp/sdk` (`HSPClient.pay` / `payX402`)** — the MCP signs nothing.
+- **`@hsp/mcp`** — a **pure, key-less** MCP server. It holds no private key and **signs
+  nothing**; it gives an agent ten tools — eight to *reason over* HSP (`hsp_verify` runs the
+  verifier, `hsp_explain` narrates the decision, `hsp_inspect` decodes a
+  mandate/receipt/attestation, `hsp_capability` + `hsp_capability_diff` are the policy
+  language, `hsp_build_requirements` + `hsp_check_requirements` cover what a payee demands,
+  `hsp_build_mandate` builds an unsigned mandate + its hash) **plus two to *pay key-lessly***:
+  `hsp_prepare_payment` returns the unsigned mandate + settlement in standard wallet-RPC shapes
+  (`eth_signTypedData_v4` / `eth_sendTransaction`), the agent routes them to a **wallet MCP**
+  (Phantom `@phantom/mcp-server`, Coinbase Agentic Wallets, MetaMask, …) or the user's wallet to
+  sign, and `hsp_submit_payment` relays the signed result to the Coordinator → `SETTLED`. The MCP
+  still signs nothing — the wallet does. **`@hsp/sdk` (`HSPClient.pay` / `payX402`) is still an
+  option for paying from code.**
 - **`skills/hsp-verify`** — an AI skill that teaches an agent to *verify & reason about*
   HSP payments: verify / explain a received payment, inspect/decode wire objects, resolve
-  capabilities, and check requirements. It moves no money and holds no key. **To actually
-  pay, use `@hsp/sdk`.**
+  capabilities, and check requirements. It moves no money and holds no key. **To pay, the
+  `hsp` MCP prepares the unsigned payment and a wallet MCP signs it (key-less); `@hsp/sdk` is
+  still available for code-based paying.**
 
-The MCP needs only `HSP_CHAIN`; optionally pin the adapter address
+The MCP needs only `HSP_CHAIN` to reason; to **pay**, add `HSP_COORDINATOR_URL` +
+`HSP_API_KEY` (a Coordinator URL + a write key — **not a signing key**; the MCP stays key-less)
+and register a wallet MCP alongside it. Optionally pin the adapter address
 (`HSP_PINNED_ADAPTER_ADDRESS`) so `hsp_verify` can check receipts. The
-`.mcp.json.example` in the repo shows the registration.
+`.mcp.json.example` in the repo shows the two-server registration.
 
 ---
 

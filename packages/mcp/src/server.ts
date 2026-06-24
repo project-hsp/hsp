@@ -17,7 +17,20 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { encodeAbiParameters, getAddress, keccak256, toHex, type Address, type Hex } from 'viem';
+import {
+  createPublicClient,
+  decodeAbiParameters,
+  encodeAbiParameters,
+  encodeFunctionData,
+  getAddress,
+  http,
+  keccak256,
+  parseAbi,
+  recoverAddress,
+  toHex,
+  type Address,
+  type Hex,
+} from 'viem';
 import {
   BASELINE_CAP_FAMILIES,
   canonicalizeCapSet,
@@ -37,7 +50,15 @@ import { X402_ADAPTER_ID, x402InstanceKey } from '@hsp/core/adapter/x402';
 import { decodeX402ExactProof } from '@hsp/core/adapter/x402-exact';
 import { buildPublicRequirements, type MandateRequirements } from '@hsp/core/policy/public';
 import { buildComplianceRequirements } from '@hsp/core/policy/compliance';
-import { HSPVerifier, resolveComplianceCaps, type CompliancePolicyOpts } from '@hsp/sdk';
+import { toCaip2 } from '@hsp/core/x402/index';
+import {
+  HSPVerifier,
+  resolveComplianceCaps,
+  mandateTypedData,
+  eip3009TypedData,
+  type CompliancePolicyOpts,
+  type Eip3009Authorization,
+} from '@hsp/sdk';
 import type { ComplianceFamily } from '@hsp/core/policy/compliance';
 
 export interface McpDeps {
@@ -48,6 +69,11 @@ export interface McpDeps {
   x402Domains?: string[];
   /** Issuer trust, when verifying compliant receipts. */
   compliance?: CompliancePolicyOpts;
+  /** For hsp_prepare_payment / hsp_submit_payment: the Coordinator to register + observe through.
+   *  This is a URL + a write API key — NOT a signing key; the MCP still holds NO private key
+   *  (the actual signature comes from an external wallet, e.g. a wallet MCP). */
+  coordinatorUrl?: string;
+  apiKey?: string;
 }
 
 // ─────────────────────────── helpers ───────────────────────────
@@ -99,6 +125,47 @@ function trustNote(receipt: Receipt, adapterAddress: Address): string {
     return `the proof is an OPERATOR OBSERVATION (no payer signature in it); the from/to/value binding rests on the pinned operator ${adapterAddress} honestly observing the chain. Trust-min'd settlement would require proves:settlement-verified (not provided here).`;
   }
   return `trust the pinned operator ${adapterAddress} per the proof schema ${receipt.proofSchemaId}.`;
+}
+
+const ERC20_TRANSFER = parseAbi(['function transfer(address,uint256)']);
+const ERC20_DOMAIN = parseAbi(['function name() view returns (string)', 'function version() view returns (string)']);
+
+/** Build an unsigned MandateBody + its mandateHash (random nonce — distinct payments don't collide). */
+function buildMandateBody(deps: McpDeps, p: { payer: Address; to: Address; amount: string; token: Address; deadline: number; caps: Hex[] }): { body: MandateBody; mandateHash: Hex } {
+  const body: MandateBody = {
+    nonce: toHex(crypto.getRandomValues(new Uint8Array(32))),
+    signer: { profileId: eip712EoaSigner.profileIdHash, payload: encodeAbiParameters([{ type: 'address' }], [getAddress(p.payer)]) },
+    recipient: { kind: 0, payload: encodeAbiParameters([{ type: 'address' }], [getAddress(p.to)]) },
+    token: getAddress(p.token),
+    amount: p.amount,
+    chainId: deps.chain.chainId,
+    deadline: p.deadline,
+    requiredCapabilitiesHash: requiredCapabilitiesHash(p.caps),
+  };
+  return { body, mandateHash: computeMandateHash(chainDomain(deps.chain), body) };
+}
+
+/** HTTP to the Coordinator with the (optional) write API key. NOT a signing key. */
+async function coordHttp(deps: McpDeps, method: string, path: string, body?: unknown): Promise<{ status: number; json: unknown }> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (deps.apiKey) headers.authorization = `Bearer ${deps.apiKey}`;
+  const init: RequestInit = { method, headers };
+  if (body !== undefined) init.body = JSON.stringify(body);
+  const res = await fetch(`${deps.coordinatorUrl!.replace(/\/$/, '')}${path}`, init);
+  let json: unknown = null;
+  try {
+    json = await res.json();
+  } catch {
+    /* non-JSON */
+  }
+  return { status: res.status, json };
+}
+
+/** eip712-eoa.v1 requires v ∈ {27,28}; some wallets return v ∈ {0,1}. */
+function normalizeV(sig: Hex): Hex {
+  if (sig.length !== 132) return sig;
+  const v = parseInt(sig.slice(130, 132), 16);
+  return v === 0 || v === 1 ? ((sig.slice(0, 130) + (v + 27).toString(16).padStart(2, '0')) as Hex) : sig;
 }
 
 // ─────────────────────────── tool table ───────────────────────────
@@ -206,6 +273,41 @@ const TOOLS = [
         capabilities: { type: 'array', description: 'optional required capability ids (0x…)' },
       },
       ['to', 'amount', 'signer'],
+    ),
+  },
+  {
+    name: 'hsp_prepare_payment',
+    description:
+      "PREPARE a payment for an EXTERNAL signer (a wallet MCP / the user's wallet) — this tool holds NO key and signs nothing. Returns the unsigned things to sign in STANDARD wallet-RPC shapes: the HSP mandate (eth_signTypedData_v4) + the settlement (evm-transfer = eth_sendTransaction; x402 = eth_signTypedData_v4 EIP-3009). Route each toSign[].method to your wallet MCP, then call hsp_submit_payment.",
+    inputSchema: A(
+      {
+        payer: S('the paying EVM address — the wallet that will sign (0x…)'),
+        to: S('recipient EVM address (0x…)'),
+        amount: S('amount in token base units (decimal string)'),
+        token: S('optional ERC-20 address; defaults to the chain-pinned stablecoin'),
+        rail: S("'evm-transfer' (default) | 'x402'"),
+        facilitatorUrl: S('for rail=x402: the x402 facilitator base URL'),
+        deadline: { type: 'number', description: 'optional unix seconds; default now + 1h' },
+      },
+      ['payer', 'to', 'amount'],
+    ),
+  },
+  {
+    name: 'hsp_submit_payment',
+    description:
+      'SUBMIT a payment whose mandate + settlement were signed externally (by a wallet MCP). Re-verifies the mandate signature against the expected paymentId (rejects a tampered body), registers it with the Coordinator, relays the settlement (observe the txHash, or relay the EIP-3009 to the facilitator), and returns the SETTLED status. Holds no key — only relays signed artifacts.',
+    inputSchema: A(
+      {
+        paymentId: S('the paymentId returned by hsp_prepare_payment (0x…)'),
+        rail: S("'evm-transfer' | 'x402' (as returned by prepare)"),
+        mandateBody: { type: 'object', description: 'the mandateBody from hsp_prepare_payment, passed back verbatim' },
+        signed: {
+          type: 'object',
+          description:
+            'the signatures: { mandate: <0xsig>, settlement: <txHash for evm-transfer | { authorization, signature, facilitatorUrl, merchantDomain, tokenName, tokenVersion } for x402> }',
+        },
+      },
+      ['paymentId', 'rail', 'mandateBody', 'signed'],
     ),
   },
 ] as const;
@@ -376,6 +478,88 @@ export function buildServer(deps: McpDeps): Server {
             requiredCapabilities: labelCaps(caps),
             next: 'sign mandateHash with the payer key (e.g. @hsp/sdk signMandate) — this tool does NOT sign or move money',
           });
+        }
+
+        case 'hsp_prepare_payment': {
+          const payer = getAddress(String(args.payer));
+          const to = getAddress(String(args.to));
+          const amount = BigInt(String(args.amount));
+          const token = args.token ? getAddress(String(args.token)) : deps.chain.stablecoin.address;
+          const rail = (args.rail as string) ?? 'evm-transfer';
+          const deadline = (args.deadline as number) ?? Math.floor(Date.now() / 1000) + 3600;
+          const { body, mandateHash } = buildMandateBody(deps, { payer, to, amount: amount.toString(), token, deadline, caps: [] });
+          const mandateSign = { id: 'mandate', method: 'eth_signTypedData_v4', params: { address: payer, typedData: mandateTypedData(chainDomain(deps.chain), body) }, expect: { mandateHash } };
+
+          if (rail === 'x402') {
+            const facilitatorUrl = String(args.facilitatorUrl ?? '').replace(/\/$/, '');
+            if (!facilitatorUrl) return text({ error: 'facilitatorUrl-required', detail: 'rail=x402 needs facilitatorUrl' }, true);
+            const pc = createPublicClient({ transport: http(deps.chain.rpcUrl) });
+            const [name, version] = (await Promise.all([
+              pc.readContract({ address: token, abi: ERC20_DOMAIN, functionName: 'name' }),
+              pc.readContract({ address: token, abi: ERC20_DOMAIN, functionName: 'version' }),
+            ])) as [string, string];
+            const info = (await (await fetch(`${facilitatorUrl}/x402/info`)).json()) as { merchantDomain?: string };
+            const validBefore = deadline;
+            const auth: Eip3009Authorization = { from: payer, to, value: amount, validAfter: 0, validBefore, nonce: toHex(crypto.getRandomValues(new Uint8Array(32))) };
+            const settleSign = {
+              id: 'settlement',
+              method: 'eth_signTypedData_v4',
+              params: { address: payer, typedData: eip3009TypedData({ name, version, chainId: deps.chain.chainId, address: token }, auth) },
+              relay: {
+                rail: 'x402',
+                facilitatorUrl,
+                merchantDomain: info.merchantDomain ?? '',
+                tokenName: name,
+                tokenVersion: version,
+                authorization: { from: payer, to, value: amount.toString(), validAfter: '0', validBefore: String(validBefore), nonce: auth.nonce },
+              },
+            };
+            return text({ paymentId: mandateHash, rail: 'x402', mandateBody: body, toSign: [mandateSign, settleSign], next: 'route each toSign[].method to your wallet MCP, then call hsp_submit_payment' });
+          }
+
+          const data = encodeFunctionData({ abi: ERC20_TRANSFER, functionName: 'transfer', args: [to, amount] });
+          const settleSign = { id: 'settlement', method: 'eth_sendTransaction', params: { tx: { from: payer, to: token, data, value: '0x0', chainId: deps.chain.chainId } } };
+          return text({ paymentId: mandateHash, rail: 'evm-transfer', mandateBody: body, toSign: [mandateSign, settleSign], next: 'have your wallet MCP sign+broadcast the tx, then call hsp_submit_payment with the mandate signature + the settlement txHash' });
+        }
+
+        case 'hsp_submit_payment': {
+          if (!deps.coordinatorUrl) return text({ error: 'no-coordinator', detail: 'hsp_submit_payment needs HSP_COORDINATOR_URL (+ HSP_API_KEY)' }, true);
+          const rail = String(args.rail);
+          const body = args.mandateBody as MandateBody;
+          const signed = args.signed as { mandate: Hex; settlement: unknown };
+          const mandateHash = computeMandateHash(chainDomain(deps.chain), body);
+          if (String(args.paymentId).toLowerCase() !== mandateHash.toLowerCase()) {
+            return text({ error: 'mandate-tampered', detail: 'mandateBody does not reproduce paymentId — refusing' }, true);
+          }
+          const payer = getAddress(decodeAbiParameters([{ type: 'address' }], body.signer.payload)[0] as Address);
+          const sig = normalizeV(signed.mandate);
+          const recovered = await recoverAddress({ hash: mandateHash, signature: sig });
+          if (getAddress(recovered) !== payer) {
+            return text({ error: 'bad-mandate-signature', detail: `signature recovers to ${recovered}, expected payer ${payer}` }, true);
+          }
+          const mandate: SignedMandate = { body, signerProof: sig, requiredCapabilities: [] };
+          const reg = await coordHttp(deps, 'POST', '/payments', { chain: deps.chain.name, mandate, attestations: [] });
+          if (reg.status !== 200 && reg.status !== 201) return text({ error: 'register-failed', status: reg.status, detail: reg.json }, true);
+
+          if (rail === 'x402') {
+            const s = signed.settlement as { authorization: Record<string, unknown>; signature: Hex; facilitatorUrl: string; merchantDomain: string; tokenName: string; tokenVersion: string };
+            const payTo = getAddress(decodeAbiParameters([{ type: 'address' }], body.recipient.payload)[0] as Address);
+            const requirements = { scheme: 'exact', network: toCaip2(deps.chain.chainId), asset: getAddress(body.token), amount: String(body.amount), payTo, maxTimeoutSeconds: 60, extra: { name: s.tokenName, version: s.tokenVersion } };
+            const paymentPayload = { x402Version: 2, accepted: requirements, payload: { signature: s.signature, authorization: s.authorization } };
+            const settleRes = await fetch(`${s.facilitatorUrl.replace(/\/$/, '')}/settle`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ x402Version: 2, paymentPayload, paymentRequirements: requirements }) });
+            const settle = (await settleRes.json()) as { success?: boolean; transaction?: Hex; errorReason?: string };
+            if (!settle.success || !settle.transaction) return text({ error: 'x402-settle-failed', detail: settle.errorReason ?? 'unknown' }, true);
+            const obs = await coordHttp(deps, 'POST', `/payments/${mandateHash}/x402-observe`, { authorization: s.authorization, signature: s.signature, tokenName: s.tokenName, tokenVersion: s.tokenVersion, txHash: settle.transaction, merchantDomain: s.merchantDomain });
+            if (obs.status >= 400) return text({ error: 'x402-observe-failed', status: obs.status, detail: obs.json }, true);
+          } else {
+            const txHash = signed.settlement as Hex;
+            const obs = await coordHttp(deps, 'POST', `/payments/${mandateHash}/observe`, { txHash });
+            if (obs.status >= 400 && obs.status !== 202) return text({ error: 'observe-failed', status: obs.status, detail: obs.json }, true);
+          }
+
+          const snap = await coordHttp(deps, 'GET', `/payments/${mandateHash}`);
+          const j = (snap.json ?? {}) as { status?: string; lastDecision?: { outcomeClass?: string } };
+          return text({ paymentId: mandateHash, status: j.status, decision: j.lastDecision, ship: j.lastDecision?.outcomeClass === 'ACCEPT' });
         }
 
         default:

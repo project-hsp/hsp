@@ -172,8 +172,8 @@ key is the intended posture — and merchants can still independently re-verify 
 ## 2. The ecosystem at a glance
 
 ```
-skills/hsp-verify   AI skill — an agent verifies & reasons about HSP payments (verify / explain / inspect / capabilities / requirements); moves no money. To pay, use @hsp/sdk.
-packages/mcp        MCP server — how an agent reasons: pure/key-less verify / explain / build (no pay)
+skills/hsp-verify   AI skill — an agent verifies & reasons about HSP payments (verify / explain / inspect / capabilities / requirements); moves no money. To pay, the hsp MCP prepares + a wallet MCP signs (key-less), or use @hsp/sdk.
+packages/mcp        MCP server — how an agent reasons AND pays key-lessly: verify / explain / build + prepare→wallet-signs→submit (holds no key)
 packages/sdk        how a developer pays & verifies — HSPClient.pay() / HSPVerifier.verify()
 packages/core       the protocol — types, hashes, verifier, adapters, attestations
 packages/devkit     adapter scaffolding — template + conformance runner
@@ -440,12 +440,15 @@ or client-side prevalidation.
 
 ### 5.1 MCP server
 
-The MCP server is **pure and key-less**: it holds no private key and moves no money. Every tool just
+The MCP server is **pure and key-less**: it holds no private key and **signs nothing**. Every tool
 constructs, verifies, or explains HSP wire objects, capabilities, and policy — the protocol's
-deterministic core (`@hsp/core`) plus `HSPVerifier`, exposed as agent tools. **To actually pay, an
-agent uses `@hsp/sdk` (`HSPClient.pay` / `payX402`), not the MCP.**
+deterministic core (`@hsp/core`) plus `HSPVerifier`, exposed as agent tools. It can now **pay**, too
+— but key-lessly: it *prepares* the unsigned payment, an external **wallet MCP** (or the user's
+wallet) signs it, and it *submits* the signed result (`hsp_prepare_payment` / `hsp_submit_payment`,
+[§5.1.1](#511-paying--key-less-via-a-wallet-mcp)). **`@hsp/sdk` (`HSPClient.pay` / `payX402`) is still
+a valid way to pay from code**; the MCP is the way an *agent* pays without ever holding a key.
 
-Eight tools:
+Ten tools:
 
 | Tool | What it does |
 |---|---|
@@ -456,24 +459,63 @@ Eight tools:
 | `hsp_capability_diff` | compare a required vs satisfied capability set (canonicalized, the verifier rule) → what's missing to close the gap. |
 | `hsp_build_requirements` | emit a §7.7 `MandateRequirements` (what a payee/deployment advertises). `mode: public` (empty policy) \| `compliance` (requires the given KYC/sanctions issuers). |
 | `hsp_check_requirements` | pre-flight: does a mandate satisfy a given `MandateRequirements`? (covers the policy floor + a supported chain) — call before paying. |
-| `hsp_build_mandate` | construct an **UNSIGNED** `MandateBody` + its `mandateHash`. Signing is external (the payer signs with their key, e.g. via `@hsp/sdk`); this tool never signs and never moves money. |
+| `hsp_build_mandate` | construct an **UNSIGNED** `MandateBody` + its `mandateHash`. Signing is external (the payer signs with their key, e.g. via a wallet MCP or `@hsp/sdk`); this tool never signs and never moves money. |
+| `hsp_prepare_payment` | prepare a payment: register the mandate and return the **UNSIGNED** things to sign as `toSign[]`, in **standard wallet-RPC shapes** — the HSP mandate (`eth_signTypedData_v4`) + the settlement (`eth_sendTransaction` for evm-transfer; EIP-3009 `eth_signTypedData_v4` for x402). **Signs nothing** — route `toSign[]` to a wallet MCP / wallet. |
+| `hsp_submit_payment` | relay the **externally-signed** mandate + settlement to the Coordinator. Re-verifies the signature first (a tampered body is rejected), observes the settlement, and returns the verified status (`SETTLED`). Holds no key — only a Coordinator write key. |
+
+### 5.1.1 Paying — key-less, via a wallet MCP
+
+The MCP pays **without ever holding a key**. The pattern is *prepare → an external signer signs →
+submit*, and the external signer is a **wallet MCP** the agent routes to (Phantom
+`@phantom/mcp-server`, Coinbase Agentic Wallets, MetaMask, …) or the user's own wallet. Spend limits
+and approvals live in *that* wallet, not in `hsp`:
+
+1. **`hsp_prepare_payment`** registers the mandate and returns `toSign[]` — the unsigned items in
+   **standard wallet-RPC shapes**: the HSP mandate as an `eth_signTypedData_v4` request, and the
+   settlement as either `eth_sendTransaction` (evm-transfer) or an EIP-3009 `eth_signTypedData_v4`
+   (x402). It signs nothing.
+2. The **agent routes each `toSign[]` item to the wallet MCP** — exactly the RPC the wallet already
+   speaks — which signs (and, for `eth_sendTransaction`, broadcasts) it.
+3. **`hsp_submit_payment`** relays the externally-signed mandate + settlement back to the
+   Coordinator. It **re-verifies the signature first** — a tampered body is rejected — then observes
+   the settlement and returns the verified status (`SETTLED`).
+
+Register both servers in `.mcp.json` (the `hsp` MCP plus a wallet MCP as the signer), e.g.:
+
+```jsonc
+{ "mcpServers": {
+    "hsp": { "command": "npx", "args": ["tsx", "packages/mcp/src/index.ts"],
+      // HSP_COORDINATOR_URL + HSP_API_KEY are a Coordinator URL + WRITE key for prepare/submit —
+      // NOT a signing key; the MCP stays key-less.
+      "env": { "HSP_CHAIN": "hashkey-testnet",
+               "HSP_COORDINATOR_URL": "<COORDINATOR_URL>", "HSP_API_KEY": "<your-team-key>" } },
+    // the EXTERNAL SIGNER — the agent routes hsp_prepare_payment's toSign[] here, then calls hsp_submit_payment:
+    "phantom": { "command": "npx", "args": ["-y", "@phantom/mcp-server@latest"] }
+} }
+```
+
+See [`.mcp.json.example`](../.mcp.json.example) for the full annotated version.
 
 ### 5.2 Environment reference
 
-Key-less by design — no agent key, no spend caps. Only the chain is required; the rest are optional
-and only widen what `hsp_verify` can check.
+Key-less by design — no agent **signing** key, no spend caps. Only the chain is required; the rest
+are optional. `HSP_COORDINATOR_URL` + `HSP_API_KEY` enable paying (prepare/submit); the others widen
+what `hsp_verify` can check.
 
 | Variable | Required | Meaning |
 |---|---|---|
 | `HSP_CHAIN` | default `anvil-dev` | registry chain name (drives hashing, `build_*`, and verify) |
+| `HSP_COORDINATOR_URL` | for `hsp_prepare_payment`/`hsp_submit_payment` | the Coordinator base URL prepare/submit register and submit against |
+| `HSP_API_KEY` | for `hsp_prepare_payment`/`hsp_submit_payment` | a Coordinator **write** key (Bearer). **NOT a signing key** — the MCP still signs nothing; the wallet MCP / wallet signs |
 | `HSP_STABLECOIN_<CHAIN>` | anvil only | `0xTOKEN:SYMBOL:DECIMALS` for per-run tokens |
 | `HSP_PINNED_ADAPTER_ADDRESS` | for `hsp_verify`/`hsp_explain` | the Coordinator's adapter observation address you pinned (or pass `adapterAddress` per call) |
 | `HSP_X402_DOMAINS` | optional | comma-separated merchant domains — to verify `adapter:x402` receipts |
 | `HSP_COMPLIANCE_ISSUER` | optional | trusted issuer address — to verify compliant (KYC/sanctions) receipts |
 
-There is no `HSP_AGENT_PRIVATE_KEY`, `HSP_MAX_AMOUNT_BASE_UNITS`, `HSP_DAILY_CAP_BASE_UNITS`,
-`HSP_RECIPIENT_ALLOWLIST`, or MCP `HSP_API_KEY`: the server signs nothing and calls no write
-endpoint. Register via [`.mcp.json.example`](../.mcp.json.example) or
+There is still no `HSP_AGENT_PRIVATE_KEY`, `HSP_MAX_AMOUNT_BASE_UNITS`, `HSP_DAILY_CAP_BASE_UNITS`,
+or `HSP_RECIPIENT_ALLOWLIST`: the server **signs nothing** and holds no signing key — the wallet MCP
+does. `HSP_API_KEY` here is a Coordinator *write* key (for prepare/submit), not a private key. Register
+via [`.mcp.json.example`](../.mcp.json.example) or
 `claude mcp add hsp -- npx tsx packages/mcp/src/index.ts`.
 
 ### 5.3 The skill
@@ -481,7 +523,9 @@ endpoint. Register via [`.mcp.json.example`](../.mcp.json.example) or
 `cp -r skills/hsp-verify ~/.claude/skills/` installs an AI skill that teaches an agent to
 **verify & reason about** HSP payments — verify / explain a received payment, inspect/decode
 wire objects, resolve capabilities, and check requirements. It moves no money and holds no key.
-**To actually pay, use `@hsp/sdk`.**
+**To pay, the `hsp` MCP prepares the unsigned payment and a wallet MCP signs it (key-less,
+[§5.1.1](#511-paying--key-less-via-a-wallet-mcp)); `@hsp/sdk` is still available for code-based
+paying.**
 
 ---
 

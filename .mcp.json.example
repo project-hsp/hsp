@@ -1,16 +1,24 @@
 {
-  "//": "HSP MCP server registration example (copy into your project's .mcp.json, or `claude mcp add hsp -- npx tsx <repo>/packages/mcp/src/index.ts`). This server is PURE / KEY-LESS: it constructs, verifies, and explains HSP wire objects + capabilities + policy — it moves NO money and holds NO key, so there is no agent key and no spend caps. To actually PAY, use @hsp/sdk (HSPClient.pay / payX402). The only required var is HSP_CHAIN; the rest are optional and only widen what hsp_verify can check.",
+  "//": "HSP MCP server registration example (copy into your project's .mcp.json, or `claude mcp add hsp -- npx tsx <repo>/packages/mcp/src/index.ts`). This server is PURE / KEY-LESS: it constructs, verifies, and explains HSP wire objects + capabilities + policy, AND can now PAY — but it holds NO private key and signs NOTHING. Paying is prepare → external wallet signs → submit: hsp_prepare_payment returns the UNSIGNED things in standard wallet-RPC shapes (eth_signTypedData_v4 for the mandate; eth_sendTransaction or EIP-3009 eth_signTypedData_v4 for the settlement), your agent routes them to a WALLET MCP / wallet for signing, then hsp_submit_payment relays the signed mandate + settlement to the Coordinator (re-verifying the signature) → SETTLED. @hsp/sdk is still a valid way to pay from code. HSP_CHAIN is the only required var; HSP_COORDINATOR_URL + HSP_API_KEY are needed for prepare/submit (see comment below); the rest are optional and only widen what hsp_verify can check.",
   "mcpServers": {
     "hsp": {
       "command": "npx",
       "args": ["tsx", "packages/mcp/src/index.ts"],
       "env": {
         "HSP_CHAIN": "anvil-dev",
+        "//": "HSP_COORDINATOR_URL + HSP_API_KEY are a Coordinator URL + a WRITE key used by hsp_prepare_payment / hsp_submit_payment to register and submit. They are NOT a signing key — the MCP stays key-less; the actual signature comes from your wallet MCP / wallet.",
+        "HSP_COORDINATOR_URL": "https://your-coordinator.example",
+        "HSP_API_KEY": "your-team-write-key",
         "HSP_STABLECOIN_ANVIL_DEV": "0xYOUR_TOKEN:MUSDC:6",
         "HSP_PINNED_ADAPTER_ADDRESS": "0xCOORDINATOR_ADAPTER_ADDRESS",
         "HSP_X402_DOMAINS": "merchant.example.com",
         "HSP_COMPLIANCE_ISSUER": "0xISSUER_ADDRESS"
       }
+    },
+    "//phantom": "A WALLET MCP is the EXTERNAL SIGNER. The agent routes hsp_prepare_payment's toSign[] (each a standard eth_signTypedData_v4 / eth_sendTransaction request) to this wallet MCP to sign or broadcast, then calls hsp_submit_payment with the results. Spend limits / approvals live in the wallet, not in hsp. Swap for Coinbase Agentic Wallets, MetaMask, or the user's own wallet as you prefer.",
+    "phantom": {
+      "command": "npx",
+      "args": ["-y", "@phantom/mcp-server@latest"]
     }
   }
 }

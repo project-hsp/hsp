@@ -21,8 +21,10 @@ export {
   signMandateBody,
   signerAddress,
   mandateTypedData,
+  eip3009TypedData,
   walletClientFor,
   type HSPSigner,
+  type Eip3009Authorization,
 } from './signer.js';
 export { fetchRequirements, buildPaymentRequest, type MandateRequirements, type PaymentRequest } from './requirements.js';
 export {

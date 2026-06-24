@@ -13,7 +13,8 @@ not a bolt-on.
 
 ```
 skills/hsp-verify  AI skill: verify/explain/inspect, no money    — how an AI reasons about pay
-packages/mcp       MCP server: pure/key-less verify/explain/build — how an AI reasons over HSP
+packages/mcp       MCP server: pure/key-less verify/explain/build — reasons over HSP AND pays
+                   + prepare→wallet-MCP-signs→submit (holds no key)  key-lessly (wallet signs)
 packages/sdk       HSPClient.pay() one-call / HSPVerifier.verify() — how a developer pays
 packages/devkit    build & conformance-test your own adapter      — extend the protocol
 packages/core      protocol core: types, hashes, verifier,        — the reference implementation
@@ -136,17 +137,25 @@ decision trace (also useful as an API).
 ## AI integration
 
 - **MCP**: copy [`.mcp.json.example`](.mcp.json.example) into your `.mcp.json`
-  (or `claude mcp add`). The server is **pure / key-less** — eight tools that
+  (or `claude mcp add`). The server is **pure / key-less** — **ten tools**. Eight
   construct, verify, and explain HSP wire objects + capabilities + policy
   (`hsp_verify`, `hsp_explain`, `hsp_inspect`, `hsp_capability`,
   `hsp_capability_diff`, `hsp_build_requirements`, `hsp_check_requirements`,
-  `hsp_build_mandate`). It moves no money and holds no key; only `HSP_CHAIN` is
-  required (optional: `HSP_PINNED_ADAPTER_ADDRESS`, `HSP_X402_DOMAINS`,
-  `HSP_COMPLIANCE_ISSUER` widen what `hsp_verify` can check). **To actually pay,
-  use `@hsp/sdk`** (`HSPClient.pay` / `payX402`).
+  `hsp_build_mandate`); two **pay key-lessly** — `hsp_prepare_payment` returns the
+  unsigned mandate + settlement in standard wallet-RPC shapes
+  (`eth_signTypedData_v4` / `eth_sendTransaction`), a **wallet MCP** (Phantom
+  `@phantom/mcp-server`, Coinbase Agentic Wallets, MetaMask, …) or the user's wallet
+  signs them, and `hsp_submit_payment` relays the signed result to the Coordinator →
+  `SETTLED`. The MCP **signs nothing** — the wallet does. `HSP_CHAIN` is the only var
+  needed to reason; to pay, add `HSP_COORDINATOR_URL` + `HSP_API_KEY` (a URL + a write
+  key — **not a signing key**) and register a wallet MCP alongside it (optional:
+  `HSP_PINNED_ADAPTER_ADDRESS`, `HSP_X402_DOMAINS`, `HSP_COMPLIANCE_ISSUER` widen what
+  `hsp_verify` can check). `@hsp/sdk` (`HSPClient.pay` / `payX402`) is still an option
+  for paying from code.
 - **Skill**: `cp -r skills/hsp-verify ~/.claude/skills/` — an AI skill that
   verifies & reasons about HSP payments (verify / explain / inspect / capabilities /
-  requirements); moves no money. To pay, use `@hsp/sdk`.
+  requirements); moves no money. To pay, the `hsp` MCP prepares the unsigned payment and
+  a wallet MCP signs it (key-less); `@hsp/sdk` is still available for code-based paying.
 
 ## Chains
 

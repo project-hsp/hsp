@@ -22,6 +22,9 @@ export function depsFromEnv(env: NodeJS.ProcessEnv = process.env): McpDeps {
   const chain: ChainConfig = resolveChain(chainName, overrides);
 
   const deps: McpDeps = { chain };
+  // for hsp_prepare_payment / hsp_submit_payment — a Coordinator URL + write key (NOT a signing key)
+  if (env.HSP_COORDINATOR_URL) deps.coordinatorUrl = env.HSP_COORDINATOR_URL;
+  if (env.HSP_API_KEY) deps.apiKey = env.HSP_API_KEY;
   if (env.HSP_PINNED_ADAPTER_ADDRESS) deps.pinnedAdapterAddress = env.HSP_PINNED_ADAPTER_ADDRESS as Address;
   if (env.HSP_X402_DOMAINS) deps.x402Domains = env.HSP_X402_DOMAINS.split(',').map((d) => d.trim()).filter(Boolean);
   if (env.HSP_COMPLIANCE_ISSUER) {
