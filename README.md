@@ -8,8 +8,8 @@ accepts iff `requiredCapabilities ⊆ satisfiedCapabilities` — compliance
 not a bolt-on.
 
 - **Developer guide (detailed):** [`docs/guide.md`](docs/guide.md) — concepts, full API reference, walkthroughs, error codes
-- **Hackathon onboarding:** [`docs/hsp-hackathon-guide.md`](docs/hsp-hackathon-guide.md) — what HSP is, what you can build, and your first payment in five minutes
-- **This repo is the developer toolchain** — point it at a hosted Coordinator and pay:
+- **Onboarding & 5-minute quickstart:** the developer portal (`GET /docs` on a Coordinator) — what HSP is, what you can build, and your first payment in five minutes
+- **This repo is the developer toolchain** — point it at a Coordinator and pay:
 
 ```
 skills/hsp-verify  AI skill: verify/explain/inspect, no money    — how an AI reasons about pay
@@ -22,8 +22,8 @@ packages/core      protocol core: types, hashes, verifier,        — the refere
 ```
 
 The **Coordinator** — the REST hub that registers mandates, observes settlement, runs the
-verifier, and serves the Explorer + `/docs` portal — is a **hosted service** you point your SDK
-at. It is not built from this repo; the organizer runs it for the hackathon.
+verifier, and serves the Explorer + `/docs` portal — is a deployed service you point your SDK
+at. It is not built from this repo; you point the SDK at a deployment's Coordinator.
 
 ## Trust model in one paragraph
 
@@ -60,69 +60,33 @@ Scenario demos: [`compliance-pay-demo.ts`](examples/compliance-pay-demo.ts) (KYC
 [`compliance-x402-demo.ts`](examples/compliance-x402-demo.ts) (KYC+sanctions over x402),
 [`x402-pay-demo.ts`](examples/x402-pay-demo.ts) (machine payment, conformant x402 v2) and [`x402-fetch-demo.ts`](examples/x402-fetch-demo.ts) (pay any x402-gated URL).
 
-## Using the hosted sandbox
+## Pointing at a Coordinator
 
-The organizer hosts the full stack — Coordinator (+ Explorer + the `/docs` portal), a mock
-compliance Issuer, an x402 Facilitator, and a testnet Faucet — on HashKey Chain testnet, so you
-run nothing yourself. Point the SDK at the Coordinator URL the organizer gives you, claim
-funds from the faucet (`POST <FAUCET_URL>/faucet {address}` → gas + USDC, rate-limited per
-address &amp; IP), and pay. The five-minute walkthrough lives in
-[`docs/hsp-hackathon-guide.md`](docs/hsp-hackathon-guide.md).
+A deployment runs the full stack — Coordinator (+ Explorer + the `/docs` portal), a mock
+compliance Issuer, an x402 Facilitator, and a testnet Faucet. Point the SDK at your Coordinator's
+URL, claim funds from the deployment's faucet if it has one (`POST <FAUCET_URL>/faucet {address}`
+→ gas + USDC, rate-limited per address &amp; IP), and pay. The five-minute walkthrough lives at
+the developer portal (`GET /docs` on a Coordinator).
 
-## Coordinator API
+## Coordinator API & decisions
 
-Public reads need no key; writes + the detail list need `Authorization: Bearer <key>`.
+Public reads need no key; writes + the detail list need `Authorization: Bearer <key>`. The hub
+registers signed mandates (`POST /payments`, `paymentId` **is** the mandate hash, idempotent),
+observes settlement, and serves status — only verifier-admitted receipts change status, one
+on-chain transfer settles at most one payment (`409 observation-reuse`), and the verifier's
+decision branches on `outcomeClass` (`ACCEPT` = ship · `RETRYABLE` · `POLICY` · `PERMANENT`).
 
-```sh
-BASE=<COORDINATOR_URL>; KEY=<your-team-key>   # the hosted sandbox + your /register key
-
-curl $BASE/healthz                                  # liveness
-curl $BASE/chains                                   # chain registry + adapterAddress (PIN this)
-curl "$BASE/requirements?chain=anvil-dev"           # §7.7 MandateRequirements (normative format)
-curl $BASE/stats                                    # public aggregate counts
-curl -H "Authorization: Bearer $KEY" "$BASE/payments?status=SETTLED&limit=20"
-
-# register a signed mandate (the SDK does this for you)
-curl -X POST -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
-  -d '{"chain":"anvil-dev","mandate":{…SignedMandate…}}' $BASE/payments
-curl $BASE/payments/0x<paymentId>                   # status + receipts + rejectedSubmissions
-curl -X POST -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
-  -d '{"txHash":"0x…"}' $BASE/payments/0x<paymentId>/observe
-curl -X POST -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
-  -d '{"receipt":{…Receipt…}}' $BASE/payments/0x<paymentId>/receipts
-```
-
-Semantics worth knowing:
-
-- `paymentId` **is** the mandate hash — recompute it client-side; registration is idempotent.
-- Only **admitted** receipts (verifier ACCEPT'ed inputs) change status; a bad
-  submission lands in `rejectedSubmissions` and never kills the payment.
-- One on-chain transfer settles **at most one** payment
-  (`(chainId, token, txHash)` uniqueness) — replaying a tx against a second
-  mandate gets `409 observation-reuse`.
-- `202` from observe = tx not mined / not enough confirmations yet — retry.
-
-## Reading a decision (`outcomeClass`)
-
-| class | meaning | what to do |
-|---|---|---|
-| `ACCEPT` | settled + verified | ship |
-| `RETRYABLE` | transient (not observable yet, stale state) | remediate + resubmit |
-| `POLICY` | this deployment doesn't admit a key/schema/cap | switch verifier or widen policy |
-| `PERMANENT` | settlement contradicts the mandate | give up; inspect `errorCode` |
-
-Frequent `errorCode`s: `HSP-MAND-EXPIRED` (settled after the mandate deadline — an on-time settlement stays verifiable later),
-`HSP-RCPT-SIG` (receipt not signed by a trusted adapter — check your pin),
-`HSP-RCPT-PROOF` (amount/recipient/token mismatch — exact-amount only; no
-fee-on-transfer, batch, or multi-log txs on the public path).
+→ Full endpoint table, semantics, and the `outcomeClass`/error-code reference: see
+[the developer guide](docs/guide.md#3-the-coordinator--api-reference) (§3) and
+[the decision reference](docs/guide.md#9-decision-reference) (§9).
 
 ## Developer portal
 
 Every Coordinator serves a zero-dependency developer portal at **`GET /docs`**
 (the root `/` redirects there): what HSP is, the four scenarios, per-layer
-integration snippets, the five-minute first payment, sandbox services and
+integration snippets, the five-minute first payment, deployment services and
 chains (live from the Coordinator's own API), decision/error reference, trust
-model and FAQ. It is the one link to hand to a hackathon participant.
+model and FAQ. It is the one link to hand to a new developer for onboarding.
 
 ## Explorer
 
@@ -136,35 +100,22 @@ decision trace (also useful as an API).
 
 ## AI integration
 
-- **MCP**: copy [`.mcp.json.example`](.mcp.json.example) into your `.mcp.json`
-  (or `claude mcp add`). The server is **pure / key-less** — **ten tools**. Eight
-  construct, verify, and explain HSP wire objects + capabilities + policy
-  (`hsp_verify`, `hsp_explain`, `hsp_inspect`, `hsp_capability`,
-  `hsp_capability_diff`, `hsp_build_requirements`, `hsp_check_requirements`,
-  `hsp_build_mandate`); two **pay key-lessly** — `hsp_prepare_payment` returns the
-  unsigned mandate + settlement in standard wallet-RPC shapes
-  (`eth_signTypedData_v4` / `eth_sendTransaction`), a **wallet MCP** (Phantom
-  `@phantom/mcp-server`, Coinbase Agentic Wallets, MetaMask, …) or the user's wallet
-  signs them, and `hsp_submit_payment` relays the signed result to the Coordinator →
-  `SETTLED`. The MCP **signs nothing** — the wallet does. `HSP_CHAIN` is the only var
-  needed to reason; to pay, add `HSP_COORDINATOR_URL` + `HSP_API_KEY` (a URL + a write
-  key — **not a signing key**) and register a wallet MCP alongside it (optional:
-  `HSP_PINNED_ADAPTER_ADDRESS`, `HSP_X402_DOMAINS`, `HSP_COMPLIANCE_ISSUER` widen what
-  `hsp_verify` can check). `@hsp/sdk` (`HSPClient.pay` / `payX402`) is still an option
-  for paying from code.
-- **Skill**: `cp -r skills/hsp-verify ~/.claude/skills/` — an AI skill that
-  verifies & reasons about HSP payments (verify / explain / inspect / capabilities /
-  requirements); moves no money. To pay, the `hsp` MCP prepares the unsigned payment and
-  a wallet MCP signs it (key-less); `@hsp/sdk` is still available for code-based paying.
+- **MCP**: copy [`.mcp.json.example`](.mcp.json.example) into your `.mcp.json` (or `claude mcp
+  add`). The server is **pure / key-less** — ten tools that construct, verify, and explain HSP
+  wire objects, and **pay key-lessly** (`hsp_prepare_payment` → a wallet MCP signs →
+  `hsp_submit_payment`; the MCP signs nothing).
+- **Skill**: `cp -r skills/hsp-verify ~/.claude/skills/` — an AI skill that verifies & reasons
+  about HSP payments; moves no money.
+
+→ The full tool list, the key-less paying flow, and the env reference: see
+[the developer guide](docs/guide.md#5-ai-integration--hspmcp-and-the-skill) (§5).
 
 ## Chains
 
-| name | chainId | stablecoin | note |
-|---|---|---|---|
-| `ethereum` | 1 | USDC `0xA0b8…eB48` (Circle, 6 dec) | mainnet — real money |
-| `hashkey` | 177 | USDC.e `0x054ed458…c9D88D0a` (6 dec, RPC-verified) | mainnet — real money; RPC `mainnet.hsk.xyz` |
-| `hashkey-testnet` | 133 | USDC `0x8FE3cB71…06eF53c6` (6 dec, RPC-verified) | faucet-friendly; RPC `testnet.hsk.xyz` |
-| `anvil-dev` | 31337 | per-run MockERC20 | local dev/test |
+`ethereum` (1) · `hashkey` (177) · `hashkey-testnet` (133) · `anvil-dev` (31337). Mainnets move
+real money; always confirm stablecoin + `adapterAddress` against `GET /chains` on your deployment.
+
+→ Addresses, decimals, and RPCs: see [the developer guide](docs/guide.md#82-chains) (§8.2).
 
 ## Supply-chain posture
 
@@ -182,8 +133,8 @@ implement your proof + `verify()`, then self-test against the real verifier —
 `npx tsx your/run-conformance.ts` exercises happy ACCEPT, forged signature,
 untrusted instance, replay, settled-after-deadline, successor rules and
 observation reuse, re-signing every mutant. When everything passes, submit
-`(adapterId, instanceKey, signing address, reorgPolicy)` to the organizers to
-get registered in the sandbox Coordinator. Full guide:
+`(adapterId, instanceKey, signing address, reorgPolicy)` to a deployment's
+operator to get registered in its Coordinator. Full guide:
 [`packages/devkit/README.md`](packages/devkit/README.md).
 
 ## License

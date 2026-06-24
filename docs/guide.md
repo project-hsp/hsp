@@ -164,7 +164,7 @@ models:
 this observation* — not, by itself, that the value movement happened. That is operator-signature
 trust, and it is the protocol's only non-cryptographic link. Deployments that want more require
 `proves:settlement-verified:v1[via=spv|light-client|zk]`, which an operator-signature-only schema
-cannot emit (fail-closed). For the hackathon sandbox, operator trust in the Coordinator's observation
+cannot emit (fail-closed). For a sandbox deployment, operator trust in the Coordinator's observation
 key is the intended posture — and merchants can still independently re-verify everything else.
 
 ---
@@ -181,8 +181,8 @@ contracts/          test tokens (MockERC20, MockEIP3009Token) — foundry
 ```
 
 The **Coordinator** — the REST hub the SDK talks to (registration, observation, verification,
-persistence, the Explorer + `/docs` portal) — is a **hosted service** run by the organizer, not a
-package in this repo: you point your SDK at it, you do not build it here.
+persistence, the Explorer + `/docs` portal) — is a deployed service, not a
+package in this repo: you point your SDK at a deployment's Coordinator, you do not build it here.
 
 Everything runs from TypeScript source via `tsx` — there is deliberately no build step. On a
 contributor machine, everything runs inside Docker (`docker/dev.Dockerfile` carries node + anvil +
@@ -584,7 +584,7 @@ proofSchemaId      = keccak256("<your-name>.proof.v1")    // any schema change �
 adapterInstanceKey = bytes32(0), or keccak256(<instance discriminator>)
 ```
 
-Ids are immutable once registered. To go live on the sandbox, submit to the organizers: the id
+Ids are immutable once registered. To go live on a deployment, submit to its operator: the id
 tuple (+ the names they hash from), your **operator signing address** (it attests observations — it
 is not custody), your `reorgPolicy` + `allowedCapabilities`, and your schema module with a passing
 conformance run. They add it to the Coordinator's trust tables; from then on
@@ -597,11 +597,10 @@ Reference implementations to crib from, in `@hsp/core/adapter/`: `mock-evm-trans
 
 ## 7. Walkthroughs
 
-All four run against the sandbox today. Point at the hosted sandbox Coordinator the organizers give
-you and set once:
+All four run against a deployment today. Point at your Coordinator's URL and set once:
 
 ```sh
-export HSP_COORDINATOR_URL=<COORDINATOR_URL>  # the hosted sandbox Coordinator
+export HSP_COORDINATOR_URL=<COORDINATOR_URL>  # a deployment's Coordinator
 export HSP_API_KEY=<your-team-key>
 export HSP_CHAIN=hashkey-testnet
 export HSP_PRIVATE_KEY=0x<funded key>        # fund it via the faucet first
@@ -651,7 +650,7 @@ property.
 
 ## 8. Environments
 
-### 8.1 The hosted sandbox
+### 8.1 A sandbox deployment
 
 | Service | Port | Notes |
 |---|---|---|
@@ -672,21 +671,20 @@ property.
 Always confirm against `GET /chains` on the deployment you're using — it also carries the
 `adapterAddress` merchants pin.
 
-### 8.3 Using the hosted sandbox
+### 8.3 Pointing at a deployment
 
-In this release the organizers host the Coordinator, mock issuer, x402 facilitator, and faucet for
-you — you run nothing yourself. Point the SDK and MCP at the sandbox Coordinator URL the organizers
-give you:
+A deployment runs the Coordinator, mock issuer, x402 facilitator, and faucet for you — you run
+nothing yourself. Point the SDK and MCP at your Coordinator's URL:
 
 ```sh
-export HSP_COORDINATOR_URL=<COORDINATOR_URL>   # the hosted sandbox Coordinator
+export HSP_COORDINATOR_URL=<COORDINATOR_URL>   # a deployment's Coordinator
 export HSP_API_KEY=<your-team-key>
 ```
 
 The deployment is configured server-side with everything statements-only or rate-limited: the
 Coordinator's observation-signing key, per-team API keys + optional compliance floor, the mock
 issuer's pinned issuer addresses, the optional x402 facilitator, and the faucet drip/cooldown
-settings. You only need your team key and the funded payer key from the faucet.
+settings. You only need your team key and a funded payer key from the faucet.
 
 ### 8.4 Local protocol development
 
@@ -844,9 +842,9 @@ No — pre-1.0 draft. Concepts are stable; wire details may change. The conforma
 frozen vectors) mean any spec change that affects hashing is caught and re-frozen deliberately,
 never silently.
 
-**Can my team add a settlement method the organizers didn't think of?**
+**Can my team add a settlement method the deployment didn't think of?**
 Yes — that's [§6](#6-building-an-adapter--hspdevkit). Pass conformance locally, submit the identity
-tuple, get registered in the sandbox trust set.
+tuple, get registered in the deployment's trust set.
 
 ---
 
