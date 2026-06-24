@@ -248,6 +248,8 @@ export class HSPClient {
   async payX402(p: {
     merchant: Address;
     facilitatorUrl: string;
+    /** The facilitator's x402 merchant domain (its instanceKey). Default: read from GET /x402/info. */
+    merchantDomain?: string;
     amount: bigint;
     token?: Address;
     deadline?: number;
@@ -283,41 +285,43 @@ export class HSPClient {
     const auth: Eip3009Authorization = { from: this.address, to: p.merchant, value: p.amount, validAfter: 0, validBefore: deadline, nonce: toHex(crypto.getRandomValues(new Uint8Array(32))) };
     const signature = await signEip3009Authorization(this.opts.signer, { name: tokenName, version: tokenVersion, chainId: chain.chainId, address: tokenAddr }, auth);
 
-    // conformant x402 v2 settle request, HSP mandate in extensions.hsp
+    // conformant x402 v2 settle request to a STOCK facilitator (it just settles + pays gas)
+    const authorization = { from: auth.from, to: auth.to, value: auth.value.toString(), validAfter: '0', validBefore: String(deadline), nonce: auth.nonce };
     const requirements = { scheme: 'exact', network: toCaip2(chain.chainId), asset: tokenAddr, amount: p.amount.toString(), payTo: p.merchant, maxTimeoutSeconds: 60, extra: { name: tokenName, version: tokenVersion } };
-    const paymentPayload = {
-      x402Version: 2,
-      accepted: requirements,
-      payload: { signature, authorization: { from: auth.from, to: auth.to, value: auth.value.toString(), validAfter: '0', validBefore: String(deadline), nonce: auth.nonce } },
-      extensions: { hsp: { mandate } },
-    };
+    const paymentPayload = { x402Version: 2, accepted: requirements, payload: { signature, authorization } };
     const fbase = p.facilitatorUrl.replace(/\/$/, '');
     const settle = (await (
       await fetch(`${fbase}/settle`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ x402Version: 2, paymentPayload, paymentRequirements: requirements }) })
-    ).json()) as {
-      success?: boolean;
-      transaction?: Hex;
-      errorReason?: string;
-      extensions?: { hsp?: { status?: string; receiptSubmitted?: boolean; bridged?: boolean; error?: string; decision?: { ok?: boolean; errorCode?: string } } };
-    };
-    if (!settle.success) throw new Error(`x402 settle failed: ${settle.errorReason ?? 'unknown'}`);
+    ).json()) as { success?: boolean; transaction?: Hex; errorReason?: string };
+    if (!settle.success || !settle.transaction) throw new Error(`x402 settle failed: ${settle.errorReason ?? 'unknown'}`);
 
-    // the on-chain settlement happened; surface the HSP bridge result faithfully (never assume SETTLED)
-    const hsp = settle.extensions?.hsp;
-    if (!hsp || hsp.receiptSubmitted !== true) {
-      throw new Error(`x402 settled on-chain (tx ${settle.transaction}) but the HSP receipt was not submitted to the Coordinator: ${hsp?.error ?? JSON.stringify(hsp)}`);
+    // the COORDINATOR is the adapter:x402 operator: hand it the EIP-3009 proof + txHash so it reads
+    // the chain, signs the adapter:x402 receipt, and verifies → SETTLED (never assume SETTLED).
+    const merchantDomain = p.merchantDomain ?? (await this.facilitatorMerchantDomain(fbase));
+    const x402 = await this.http('POST', `/payments/${mandateHash}/x402-settle`, {
+      authorization, signature, tokenName, tokenVersion, txHash: settle.transaction, merchantDomain,
+    });
+    if (x402.status !== 200 && x402.status !== 201) {
+      throw new Error(`x402 settled on-chain (tx ${settle.transaction}) but the Coordinator rejected it: HTTP ${x402.status} ${JSON.stringify(x402.json)}`);
     }
-    if (hsp.decision?.ok === false) {
-      throw new Error(`x402 settled on-chain (tx ${settle.transaction}) but the Coordinator rejected the receipt: ${hsp.decision.errorCode ?? 'unknown'}`);
-    }
+    const result = x402.json as { status?: string; decision?: { ok?: boolean; errorCode?: string } };
 
     return {
       paymentId: mandateHash,
-      txHash: (settle.transaction ?? `0x${'00'.repeat(32)}`) as Hex,
-      status: hsp.status ?? 'SETTLED',
+      txHash: settle.transaction,
+      status: result.status ?? 'SETTLED',
       mandate,
       awaitSettled: (o) => this.awaitTerminal(mandateHash, o),
     };
+  }
+
+  /** Read a (stock) x402 facilitator's merchant domain from GET /x402/info. */
+  private async facilitatorMerchantDomain(fbase: string): Promise<string> {
+    const res = await fetch(`${fbase}/x402/info`);
+    if (!res.ok) throw new Error(`could not read facilitator /x402/info (HTTP ${res.status}) — pass merchantDomain explicitly`);
+    const info = (await res.json()) as { merchantDomain?: string };
+    if (!info.merchantDomain) throw new Error('facilitator /x402/info exposes no merchantDomain — pass merchantDomain explicitly');
+    return info.merchantDomain;
   }
 
   async getPayment(paymentId: Hex): Promise<PaymentSnapshot> {

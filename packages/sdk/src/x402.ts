@@ -59,13 +59,18 @@ export interface X402GateOptions {
   settle?: boolean;
   /** Advisory HSP terms surfaced in PaymentRequired.extensions.hsp (e.g. requiredCapabilities, mandateDomain). */
   hsp?: Record<string, unknown>;
+  /** Bridge an HSP-aware payment (payload.extensions.hsp.mandate) to a verifiable adapter:x402
+   *  receipt at the Coordinator after settling — the COORDINATOR is the adapter operator: it
+   *  reads the chain and signs the receipt. Set this to make the gate register the mandate +
+   *  submit the EIP-3009 proof + txHash to the Coordinator. */
+  hspBridge?: { coordinatorUrl: string; coordinatorApiKey: string; chainName: string; merchantDomain: string };
   /** Injectable fetch (tests). */
   fetchImpl?: typeof fetch;
 }
 
 export type X402GateResult =
   | { paid: false; response: Response }
-  | { paid: true; payer: Address; settleResponse?: SettleResponse; headers: Record<string, string> };
+  | { paid: true; payer: Address; settleResponse?: SettleResponse; headers: Record<string, string>; hsp?: unknown };
 
 function requirementsOf(opts: X402GateOptions): PaymentRequirements {
   return {
@@ -128,12 +133,51 @@ export async function x402Gate(req: Request, opts: X402GateOptions): Promise<X40
   const settleResponse = (await (await post('/settle')).json()) as SettleResponse;
   if (!settleResponse.success) return { paid: false, response: paymentRequiredResponse(opts, settleResponse.errorReason ?? 'settlement failed') };
 
-  return {
+  const result: X402GateResult = {
     paid: true,
     payer: (settleResponse.payer ?? verify.payer) as Address,
     settleResponse,
     headers: { [HEADER.response]: encodeSettleResponse(settleResponse) },
   };
+  // the COORDINATOR is the adapter:x402 operator — bridge the HSP mandate (if the payer rode one)
+  // to a verifiable receipt: register it + submit the EIP-3009 proof + txHash for the Coordinator to sign.
+  const mandate = (paymentPayload.extensions?.['hsp'] as { mandate?: SignedMandate } | undefined)?.mandate;
+  if (opts.hspBridge && mandate && settleResponse.transaction) {
+    result.hsp = await bridgeGateToHsp(opts.hspBridge, mandate, paymentPayload, paymentRequirements, settleResponse, doFetch);
+  }
+  return result;
+}
+
+/** Gate-side HSP bridge: register the payer's mandate + submit the x402 settlement evidence to the
+ * Coordinator (the adapter:x402 operator), which reads the chain and signs the receipt itself. */
+async function bridgeGateToHsp(
+  cfg: { coordinatorUrl: string; coordinatorApiKey: string; chainName: string; merchantDomain: string },
+  mandate: SignedMandate,
+  payload: PaymentPayload,
+  req: PaymentRequirements,
+  settle: SettleResponse,
+  doFetch: typeof fetch,
+): Promise<Record<string, unknown>> {
+  const base = cfg.coordinatorUrl.replace(/\/$/, '');
+  const headers = { 'content-type': 'application/json', authorization: `Bearer ${cfg.coordinatorApiKey}` };
+  const reg = await doFetch(`${base}/payments`, { method: 'POST', headers, body: JSON.stringify({ chain: cfg.chainName, mandate }) });
+  const regJson = (await reg.json().catch(() => ({}))) as { paymentId?: Hex };
+  if (!regJson.paymentId) return { bridged: false, error: 'mandate registration failed' };
+  const ev = payload.payload as { signature: Hex; authorization: unknown };
+  const sub = await doFetch(`${base}/payments/${regJson.paymentId}/x402-settle`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      authorization: ev.authorization,
+      signature: ev.signature,
+      tokenName: req.extra?.['name'],
+      tokenVersion: req.extra?.['version'],
+      txHash: settle.transaction,
+      merchantDomain: cfg.merchantDomain,
+    }),
+  });
+  const subJson = (await sub.json().catch(() => ({}))) as Record<string, unknown>;
+  return { paymentId: regJson.paymentId, bridged: sub.ok, ...subJson };
 }
 
 // ─────────────────────────── x402 payer client (P4) ───────────────────────────

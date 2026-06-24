@@ -197,8 +197,9 @@ await hsp.payX402({
 });
 ```
 
-You sign both an HSP mandate and an EIP-3009 authorization; the facilitator settles
-on-chain (you pay no gas) and bridges it to a verifiable HSP receipt.
+You sign both an HSP mandate and an EIP-3009 authorization; a stock facilitator settles
+on-chain (you pay no gas), then the Coordinator confirms the transfer and signs the
+verifiable HSP receipt.
 
 To **charge** for an HTTP resource (an x402 paywall), use the SDK's `x402Gate` /
 `fetchWithX402` helpers — see `docs/guide.md`.

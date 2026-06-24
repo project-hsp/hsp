@@ -242,17 +242,18 @@ sandbox). An empty key list means open dev mode (the server warns at startup).
 ### 3.4 x402 Facilitator (separate service, optional)
 
 The Facilitator is the x402 server role, speaking the conformant Coinbase **x402 v2** wire
-(`exact` scheme on EVM / EIP-3009). It verifies the client's payment, settles on-chain via
-`transferWithAuthorization` (the client's funds move; the facilitator only pays gas), and — when
-the payment carries an HSP mandate in `extensions.hsp` — bridges it to an `adapter:x402` receipt at
-the Coordinator (which must trust it via `HSP_X402_FACILITATORS`).
+(`exact` scheme on EVM / EIP-3009). It is a **stock** facilitator: it verifies the client's payment
+and settles on-chain via `transferWithAuthorization` (the client's funds move; the facilitator only
+pays gas). It is **not** HSP-aware — the **Coordinator** is the `adapter:x402` operator: after the
+facilitator settles, the payer hands the EIP-3009 proof + txHash to the Coordinator, which reads the
+chain to confirm the transfer and signs the verifiable `adapter:x402` receipt itself.
 
 | Method & path | Purpose |
 |---|---|
 | `GET /x402/info` | facilitator address, merchant domain, instance key, chain |
 | `GET /supported` | `{ kinds: [{ x402Version: 2, scheme: "exact", network }] }` |
 | `POST /verify` | `{ x402Version, paymentPayload, paymentRequirements }` → `VerifyResponse` (signature + amount/recipient/network/time-window checks; no chain I/O) |
-| `POST /settle` | same body → `SettleResponse` (submits `transferWithAuthorization`). If `paymentPayload.extensions.hsp.mandate` is present, registers it + submits a v2 receipt; the result is in `SettleResponse.extensions.hsp`. |
+| `POST /settle` | same body → `SettleResponse` (submits `transferWithAuthorization`, returns the settlement `txHash`). Stock x402 — **no HSP bridge**; the payer (or the gate) hands the proof to the Coordinator's `POST /payments/:id/x402-settle`. |
 
 These are the standard x402 facilitator endpoints — a stock x402 resource server can call them.
 For a direct merchant payment you normally don't call them by hand: `client.payX402()` drives the
@@ -382,9 +383,10 @@ const handle = await client.payX402({
 });
 ```
 
-The SDK signs the HSP mandate AND an EIP-3009 `TransferWithAuthorization`, then one `POST /settle`
-(carrying the mandate in `extensions.hsp`) settles **your** funds (zero gas for you) and bridges to a
-verifiable `adapter:x402` receipt at the Coordinator.
+The SDK signs the HSP mandate AND an EIP-3009 `TransferWithAuthorization`, settles **your** funds via
+one `POST /settle` to a stock facilitator (zero gas for you), then hands the EIP-3009 proof + txHash to
+the Coordinator (`POST /payments/:id/x402-settle`), which confirms the transfer on-chain and signs the
+verifiable `adapter:x402` receipt.
 
 **Pay an x402-gated HTTP resource** (`fetchWithX402`) — works against ANY conformant x402 server
 (ours or a stock one); on `402` it signs the authorization and retries:
@@ -737,9 +739,9 @@ Codes are *informative* (branch on `outcomeClass`; log codes). Grouped by prefix
 | Key | Signs | Can it move money? |
 |---|---|---|
 | payer's wallet | mandates; the settlement transfer itself | its own funds, as always |
-| Coordinator's adapter key | observation receipts | **no** — statements only |
+| Coordinator's adapter key | observation receipts (evm-transfer **and** adapter:x402) | **no** — statements only |
 | issuer keys | compliance attestations | **no** — statements only |
-| facilitator key (x402) | verifies payments, signs receipts, relays the EIP-3009 settlement | only its own gas (the client's funds move via `transferWithAuthorization`) |
+| facilitator key (x402) | verifies payments + relays the EIP-3009 settlement (does **not** sign HSP receipts) | only its own gas (the client's funds move via `transferWithAuthorization`) |
 
 **The three rules:**
 
