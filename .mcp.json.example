@@ -1,18 +1,15 @@
 {
-  "//": "HSP MCP server registration example. Copy into your project's .mcp.json (or `claude mcp add hsp-pay -- npx tsx <repo>/packages/mcp/src/index.ts`). The agent key is DEMO-scoped: always set the spend caps.",
+  "//": "HSP MCP server registration example (copy into your project's .mcp.json, or `claude mcp add hsp -- npx tsx <repo>/packages/mcp/src/index.ts`). This server is PURE / KEY-LESS: it constructs, verifies, and explains HSP wire objects + capabilities + policy — it moves NO money and holds NO key, so there is no agent key and no spend caps. To actually PAY, use @hsp/sdk (HSPClient.pay / payX402). The only required var is HSP_CHAIN; the rest are optional and only widen what hsp_verify can check.",
   "mcpServers": {
-    "hsp-pay": {
+    "hsp": {
       "command": "npx",
       "args": ["tsx", "packages/mcp/src/index.ts"],
       "env": {
-        "HSP_COORDINATOR_URL": "http://127.0.0.1:8787",
-        "HSP_API_KEY": "your-team-key",
         "HSP_CHAIN": "anvil-dev",
         "HSP_STABLECOIN_ANVIL_DEV": "0xYOUR_TOKEN:MUSDC:6",
-        "HSP_AGENT_PRIVATE_KEY": "0xDEMO_SMALL_AMOUNT_KEY_ONLY",
-        "HSP_MAX_AMOUNT_BASE_UNITS": "10000000",
-        "HSP_DAILY_CAP_BASE_UNITS": "50000000",
-        "HSP_PINNED_ADAPTER_ADDRESS": "0xCOORDINATOR_ADAPTER_ADDRESS"
+        "HSP_PINNED_ADAPTER_ADDRESS": "0xCOORDINATOR_ADAPTER_ADDRESS",
+        "HSP_X402_DOMAINS": "merchant.example.com",
+        "HSP_COMPLIANCE_ISSUER": "0xISSUER_ADDRESS"
       }
     }
   }

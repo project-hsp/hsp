@@ -12,12 +12,12 @@ not a bolt-on.
 - **This repo is the developer toolchain** — point it at a hosted Coordinator and pay:
 
 ```
-skills/hsp-pay   AI skill (router + scenario protocols)           — how an AI understands paying
-packages/mcp     MCP server: hsp_quote/pay/status/verify          — how an AI actually pays
-packages/sdk     HSPClient.pay() one-call / HSPVerifier.verify()  — how a developer pays
-packages/devkit  build & conformance-test your own adapter        — extend the protocol
-packages/core    protocol core: types, hashes, verifier,          — the reference implementation
-                 adapters (evm-transfer/x402), attestations
+skills/hsp-verify  AI skill: verify/explain/inspect, no money    — how an AI reasons about pay
+packages/mcp       MCP server: pure/key-less verify/explain/build — how an AI reasons over HSP
+packages/sdk       HSPClient.pay() one-call / HSPVerifier.verify() — how a developer pays
+packages/devkit    build & conformance-test your own adapter      — extend the protocol
+packages/core      protocol core: types, hashes, verifier,        — the reference implementation
+                   adapters (evm-transfer/x402), attestations
 ```
 
 The **Coordinator** — the REST hub that registers mandates, observes settlement, runs the
@@ -63,7 +63,7 @@ Scenario demos: [`compliance-pay-demo.ts`](examples/compliance-pay-demo.ts) (KYC
 
 The organizer hosts the full stack — Coordinator (+ Explorer + the `/docs` portal), a mock
 compliance Issuer, an x402 Facilitator, and a testnet Faucet — on HashKey Chain testnet, so you
-run nothing yourself. Point the SDK / MCP at the Coordinator URL the organizer gives you, claim
+run nothing yourself. Point the SDK at the Coordinator URL the organizer gives you, claim
 funds from the faucet (`POST <FAUCET_URL>/faucet {address}` → gas + USDC, rate-limited per
 address &amp; IP), and pay. The five-minute walkthrough lives in
 [`docs/hsp-hackathon-guide.md`](docs/hsp-hackathon-guide.md).
@@ -136,11 +136,17 @@ decision trace (also useful as an API).
 ## AI integration
 
 - **MCP**: copy [`.mcp.json.example`](.mcp.json.example) into your `.mcp.json`
-  (or `claude mcp add`). Set the spend caps — the agent key is demo-scoped:
-  `HSP_MAX_AMOUNT_BASE_UNITS`, `HSP_DAILY_CAP_BASE_UNITS`, optional
-  `HSP_RECIPIENT_ALLOWLIST`. `hsp_pay` hard-requires `confirm:true`.
-- **Skill**: `cp -r skills/hsp-pay ~/.claude/skills/` — quote → explicit user
-  approval → pay → track, with the safety gates spelled out.
+  (or `claude mcp add`). The server is **pure / key-less** — eight tools that
+  construct, verify, and explain HSP wire objects + capabilities + policy
+  (`hsp_verify`, `hsp_explain`, `hsp_inspect`, `hsp_capability`,
+  `hsp_capability_diff`, `hsp_build_requirements`, `hsp_check_requirements`,
+  `hsp_build_mandate`). It moves no money and holds no key; only `HSP_CHAIN` is
+  required (optional: `HSP_PINNED_ADAPTER_ADDRESS`, `HSP_X402_DOMAINS`,
+  `HSP_COMPLIANCE_ISSUER` widen what `hsp_verify` can check). **To actually pay,
+  use `@hsp/sdk`** (`HSPClient.pay` / `payX402`).
+- **Skill**: `cp -r skills/hsp-verify ~/.claude/skills/` — an AI skill that
+  verifies & reasons about HSP payments (verify / explain / inspect / capabilities /
+  requirements); moves no money. To pay, use `@hsp/sdk`.
 
 ## Chains
 

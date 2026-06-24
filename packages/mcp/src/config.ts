@@ -1,21 +1,17 @@
 /**
- * MCP server env config. The agent key (HSP_AGENT_PRIVATE_KEY) is DEMO /
- * small-amount scoped: cap it with HSP_MAX_AMOUNT_BASE_UNITS +
- * HSP_DAILY_CAP_BASE_UNITS (+ optional HSP_RECIPIENT_ALLOWLIST). A production
- * deployment swaps in an EIP-1193 / custody signer instead of a raw key.
+ * MCP server env config — PURE / key-less. No agent key, no spend guard: this MCP
+ * only reasons over HSP wire objects (it moves no money). It needs the chain (for
+ * verify / build_* / hashing), and OPTIONALLY the pinned adapter signing address +
+ * x402 merchant domains + a trusted compliance issuer (to verify x402 / compliant
+ * receipts). To actually pay, use @hsp/sdk instead.
  */
 
-import type { Address, Hex } from 'viem';
-import { CHAIN_DEFAULTS, resolveChain, type ChainConfig, type ChainName } from '@hsp/core/chains/index';
-import { parseStablecoin } from '@hsp/core/chains/index';
-import { HSPClient } from '@hsp/sdk';
-import { SpendGuard } from './guard.js';
+import type { Address } from 'viem';
+import { CHAIN_DEFAULTS, resolveChain, parseStablecoin, type ChainConfig, type ChainName } from '@hsp/core/chains/index';
+import { resolveComplianceCaps, type ComplianceTag } from '@hsp/sdk';
 import type { McpDeps } from './server.js';
 
 export function depsFromEnv(env: NodeJS.ProcessEnv = process.env): McpDeps {
-  const agentKey = env.HSP_AGENT_PRIVATE_KEY as Hex | undefined;
-  if (!agentKey) throw new Error('HSP_AGENT_PRIVATE_KEY is required (demo/small-amount key; cap it via HSP_MAX_AMOUNT_BASE_UNITS)');
-  const coordinatorUrl = env.HSP_COORDINATOR_URL ?? 'http://127.0.0.1:8787';
   const chainName = (env.HSP_CHAIN ?? 'anvil-dev') as ChainName;
   if (!(chainName in CHAIN_DEFAULTS)) throw new Error(`unknown chain '${chainName}'`);
   const stableSpec = env[`HSP_STABLECOIN_${chainName.toUpperCase().replace(/-/g, '_')}`];
@@ -25,23 +21,18 @@ export function depsFromEnv(env: NodeJS.ProcessEnv = process.env): McpDeps {
   if (stableSpec) overrides.stablecoin = parseStablecoin(stableSpec);
   const chain: ChainConfig = resolveChain(chainName, overrides);
 
-  const hspOpts: ConstructorParameters<typeof HSPClient>[0] = {
-    coordinatorUrl,
-    signer: { kind: 'privateKey', privateKey: agentKey },
-    chain,
-  };
-  if (env.HSP_API_KEY) hspOpts.apiKey = env.HSP_API_KEY;
-  if (env.HSP_ISSUER_URL) hspOpts.issuerUrl = env.HSP_ISSUER_URL;
-
-  const guard = new SpendGuard(
-    env.HSP_MAX_AMOUNT_BASE_UNITS ? BigInt(env.HSP_MAX_AMOUNT_BASE_UNITS) : undefined,
-    env.HSP_DAILY_CAP_BASE_UNITS ? BigInt(env.HSP_DAILY_CAP_BASE_UNITS) : undefined,
-    env.HSP_RECIPIENT_ALLOWLIST
-      ? new Set(env.HSP_RECIPIENT_ALLOWLIST.split(',').map((a) => a.trim().toLowerCase()).filter(Boolean))
-      : undefined,
-  );
-
-  const deps: McpDeps = { hsp: new HSPClient(hspOpts), chain, coordinatorUrl, guard };
+  const deps: McpDeps = { chain };
   if (env.HSP_PINNED_ADAPTER_ADDRESS) deps.pinnedAdapterAddress = env.HSP_PINNED_ADAPTER_ADDRESS as Address;
+  if (env.HSP_X402_DOMAINS) deps.x402Domains = env.HSP_X402_DOMAINS.split(',').map((d) => d.trim()).filter(Boolean);
+  if (env.HSP_COMPLIANCE_ISSUER) {
+    const issuerAddress = env.HSP_COMPLIANCE_ISSUER as Address;
+    deps.compliance = {
+      trustedIssuers: [
+        { family: 'attests:kyc:v1', issuerAddress },
+        { family: 'attests:sanctions:v1', issuerAddress },
+      ],
+      policyRequiredCaps: resolveComplianceCaps(['kyc', 'sanctions'] as ComplianceTag[]),
+    };
+  }
   return deps;
 }

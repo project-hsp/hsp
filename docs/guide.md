@@ -172,8 +172,8 @@ key is the intended posture — and merchants can still independently re-verify 
 ## 2. The ecosystem at a glance
 
 ```
-skills/hsp-pay      AI skill — how an agent understands paying (quote → approval → pay → track)
-packages/mcp        MCP server — how an agent acts: hsp_quote / hsp_pay / hsp_status / hsp_verify
+skills/hsp-verify   AI skill — an agent verifies & reasons about HSP payments (verify / explain / inspect / capabilities / requirements); moves no money. To pay, use @hsp/sdk.
+packages/mcp        MCP server — how an agent reasons: pure/key-less verify / explain / build (no pay)
 packages/sdk        how a developer pays & verifies — HSPClient.pay() / HSPVerifier.verify()
 packages/core       the protocol — types, hashes, verifier, adapters, attestations
 packages/devkit     adapter scaffolding — template + conformance runner
@@ -440,41 +440,48 @@ or client-side prevalidation.
 
 ### 5.1 MCP server
 
-Four tools, designed so the dangerous one is hard to misuse:
+The MCP server is **pure and key-less**: it holds no private key and moves no money. Every tool just
+constructs, verifies, or explains HSP wire objects, capabilities, and policy — the protocol's
+deterministic core (`@hsp/core`) plus `HSPVerifier`, exposed as agent tools. **To actually pay, an
+agent uses `@hsp/sdk` (`HSPClient.pay` / `payX402`), not the MCP.**
 
-| Tool | What it does | Guardrails |
-|---|---|---|
-| `hsp_quote` | pure preview: echoes recipient/amount/token + deployment requirements | signs nothing, moves nothing |
-| `hsp_pay` | sign → register → broadcast → observe → status | **requires `confirm: true`**, which the agent may set only after the user explicitly approved the exact quote; server-side caps apply regardless |
-| `hsp_status` | payment snapshot by id | read-only |
-| `hsp_verify` | independent verification (uses the pinned adapter address) | read-only |
+Eight tools:
 
-Inputs for `hsp_quote`/`hsp_pay`: `to` (address), `amount` (base-unit decimal string), optional
-`token`, optional `profile` (compliance tags — needs the server configured with an issuer URL).
+| Tool | What it does |
+|---|---|
+| `hsp_verify` | run the protocol verifier over `(mandate, receipt[, attestations])` — ACCEPT iff `requiredCapabilities ⊆ satisfiedCapabilities`. Pins the adapter signing address; does **not** trust a Coordinator. Returns the `AcceptDecision` + a `ship` flag. |
+| `hsp_explain` | the same decision, narrated: ship?, `outcomeClass` → recommended action, the error-code meaning, required vs provided capabilities, and the trust boundary (cryptographic vs operator-attested). |
+| `hsp_inspect` | decode a mandate / receipt / attestation into plain, labelled fields (amount, recipient, token, deadline, the decoded proof, who signed what). Read-only — no verification. |
+| `hsp_capability` | resolve `verb:object:version[params]` → canonical id + meaning; with no args, list the baseline capability vocabulary (`proves:*` / `attests:*` / `hides:*` / `discloses:*`). |
+| `hsp_capability_diff` | compare a required vs satisfied capability set (canonicalized, the verifier rule) → what's missing to close the gap. |
+| `hsp_build_requirements` | emit a §7.7 `MandateRequirements` (what a payee/deployment advertises). `mode: public` (empty policy) \| `compliance` (requires the given KYC/sanctions issuers). |
+| `hsp_check_requirements` | pre-flight: does a mandate satisfy a given `MandateRequirements`? (covers the policy floor + a supported chain) — call before paying. |
+| `hsp_build_mandate` | construct an **UNSIGNED** `MandateBody` + its `mandateHash`. Signing is external (the payer signs with their key, e.g. via `@hsp/sdk`); this tool never signs and never moves money. |
 
 ### 5.2 Environment reference
 
+Key-less by design — no agent key, no spend caps. Only the chain is required; the rest are optional
+and only widen what `hsp_verify` can check.
+
 | Variable | Required | Meaning |
 |---|---|---|
-| `HSP_AGENT_PRIVATE_KEY` | ✔ | the agent's signing key — **demo / small-amount scoped**; production should use a wallet/smart-account signer |
-| `HSP_COORDINATOR_URL` | default `http://127.0.0.1:8787` | |
-| `HSP_CHAIN` | default `anvil-dev` | registry chain name |
+| `HSP_CHAIN` | default `anvil-dev` | registry chain name (drives hashing, `build_*`, and verify) |
 | `HSP_STABLECOIN_<CHAIN>` | anvil only | `0xTOKEN:SYMBOL:DECIMALS` for per-run tokens |
-| `HSP_API_KEY` | sandbox | team bearer key |
-| `HSP_ISSUER_URL` | for compliance | mock-issuer base URL |
-| `HSP_MAX_AMOUNT_BASE_UNITS` | **set it** | per-payment cap, enforced server-side |
-| `HSP_DAILY_CAP_BASE_UNITS` | **set it** | rolling daily cap, enforced server-side |
-| `HSP_RECIPIENT_ALLOWLIST` | optional | comma-separated addresses; anything else is refused |
-| `HSP_PINNED_ADAPTER_ADDRESS` | for `hsp_verify` | the observation address you pinned |
+| `HSP_PINNED_ADAPTER_ADDRESS` | for `hsp_verify`/`hsp_explain` | the Coordinator's adapter observation address you pinned (or pass `adapterAddress` per call) |
+| `HSP_X402_DOMAINS` | optional | comma-separated merchant domains — to verify `adapter:x402` receipts |
+| `HSP_COMPLIANCE_ISSUER` | optional | trusted issuer address — to verify compliant (KYC/sanctions) receipts |
 
-Register via [`.mcp.json.example`](../.mcp.json.example) or
-`claude mcp add hsp-pay -- npx tsx packages/mcp/src/index.ts`.
+There is no `HSP_AGENT_PRIVATE_KEY`, `HSP_MAX_AMOUNT_BASE_UNITS`, `HSP_DAILY_CAP_BASE_UNITS`,
+`HSP_RECIPIENT_ALLOWLIST`, or MCP `HSP_API_KEY`: the server signs nothing and calls no write
+endpoint. Register via [`.mcp.json.example`](../.mcp.json.example) or
+`claude mcp add hsp -- npx tsx packages/mcp/src/index.ts`.
 
 ### 5.3 The skill
 
-`cp -r skills/hsp-pay ~/.claude/skills/` installs a payment skill that routes between PAY /
-CHECK-STATUS / VERIFY-RECEIVED flows, enforces the quote → **explicit user approval** → pay → track
-sequence, and explains failures by `outcomeClass` (retry the retryable, abandon the permanent).
+`cp -r skills/hsp-verify ~/.claude/skills/` installs an AI skill that teaches an agent to
+**verify & reason about** HSP payments — verify / explain a received payment, inspect/decode
+wire objects, resolve capabilities, and check requirements. It moves no money and holds no key.
+**To actually pay, use `@hsp/sdk`.**
 
 ---
 
@@ -748,12 +755,13 @@ Codes are *informative* (branch on `outcomeClass`; log codes). Grouped by prefix
 1. **Pin, don't fetch-and-trust.** Merchants record the adapter observation address once
    (out-of-band: `GET /chains` at setup time, the deployment's docs) and hardcode it. Never re-fetch
    trust anchors at decision time from the party you're refusing to trust.
-2. **Demo keys are demo keys.** Example keys and the MCP agent key are for small testnet amounts.
+2. **Demo keys are demo keys.** Example/script signing keys are for small testnet amounts.
    Production signing belongs in a wallet (`eip1193`) or a smart account; the spec's signer-profile
-   system is the designed path for ERC-1271/4337 accounts.
-3. **Caps on, always.** Any agent-held key runs behind `HSP_MAX_AMOUNT_BASE_UNITS` +
-   `HSP_DAILY_CAP_BASE_UNITS` (+ allowlist). The faucet rate-limits per address. Team API keys are
-   per-team — don't share them; they gate writes, not reads.
+   system is the designed path for ERC-1271/4337 accounts. (The MCP server holds **no** key — it
+   moves no money; paying is done by `@hsp/sdk`, where the signer is yours to scope.)
+3. **Limit the blast radius.** The faucet rate-limits per address; team API keys are per-team —
+   don't share them; they gate writes, not reads. Keep any payer key you hand a script or agent
+   funded only for small testnet amounts.
 
 **Supply-chain posture of this repo** (inherit it): exact-pinned versions, repo-wide
 `ignore-scripts=true`, every new dependency vetted (typosquats, advisories, transitive tree) before

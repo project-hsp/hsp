@@ -10,4 +10,7 @@ import { buildServer } from './server.js';
 const deps = depsFromEnv();
 const server = buildServer(deps);
 await server.connect(new StdioServerTransport());
-console.error(`[hsp-mcp] ready · chain ${deps.chain.name} (${deps.chain.chainId}) · coordinator ${deps.coordinatorUrl}`);
+console.error(
+  `[hsp-mcp] ready (pure / key-less) · chain ${deps.chain.name} (${deps.chain.chainId})` +
+    (deps.pinnedAdapterAddress ? ` · pinned adapter ${deps.pinnedAdapterAddress}` : ' · no pinned adapter (pass adapterAddress per call)'),
+);

@@ -10,6 +10,9 @@ run the protocol verifier yourself against a PINNED adapter address.
    verify yet; report PROPOSED/pending.
 2. Call `hsp_verify {mandate, receipt}` (the server uses its pinned adapter
    address; pass `adapterAddress` only if the user explicitly provides a pin).
+   Prefer `hsp_explain {mandate, receipt}` when you need to SHOW the user why —
+   it narrates the required vs provided capabilities, the recommended action,
+   and the trust boundary (cryptographic vs operator-attested) alongside the verdict.
 3. Decision:
    - `ship: true` (ok + ACCEPT) → safe to ship. Quote amount/recipient from
      the mandate body so the user sees WHAT was verified.

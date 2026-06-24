@@ -67,13 +67,13 @@ your own settlement adapter (see §7).
 You consume HSP through a small layered stack — pick the layer that fits:
 
 ```
-  skills/hsp-pay   — an AI skill: teach an agent how/when to pay (safety rails)
-  @hsp/mcp         — MCP server: AI agents pay via tools (hsp_quote/pay/status/verify)
-  @hsp/sdk         — one-call pay() + independent verify()        ← most developers start here
-  @hsp/devkit      — build + conformance-test your own adapter
-  @hsp/core        — protocol primitives (types, capabilities, verifier, signer)
+  skills/hsp-verify — an AI skill: an agent verifies & reasons about HSP payments (no money)
+  @hsp/mcp          — MCP server (pure/key-less): agents verify / explain / build HSP objects
+  @hsp/sdk          — one-call pay() + independent verify()        ← most developers start here
+  @hsp/devkit       — build + conformance-test your own adapter
+  @hsp/core         — protocol primitives (types, capabilities, verifier, signer)
   ────────────────────────────────────────────────────────────
-  Coordinator      — the hosted hub (you point your SDK at it)
+  Coordinator       — the hosted hub (you point your SDK at it)
 ```
 
 The **Coordinator** is the only service you talk to over the network. It registers
@@ -244,17 +244,23 @@ npm run template -w @hsp/devkit
 
 ## 8. AI agents
 
-Two pieces let an AI agent pay safely:
+Two pieces help an AI agent work with HSP:
 
-- **`@hsp/mcp`** — an MCP server exposing `hsp_quote` / `hsp_pay` / `hsp_status` /
-  `hsp_verify`. `hsp_pay` requires explicit confirmation and is bounded by a
-  server-side **SpendGuard** (per-tx cap, daily cap, optional recipient allowlist).
-  The agent never sees a private key beyond a small demo wallet you scope.
-- **`skills/hsp-pay`** — a skill that teaches the agent the safe flow
-  (always quote → get user approval → pay), routing intents to the right tool.
+- **`@hsp/mcp`** — a **pure, key-less** MCP server. It holds no private key and moves
+  no money; it gives an agent eight tools to *reason over* HSP — `hsp_verify` (run the
+  verifier), `hsp_explain` (the decision narrated), `hsp_inspect` (decode a
+  mandate/receipt/attestation), `hsp_capability` + `hsp_capability_diff` (the policy
+  language), `hsp_build_requirements` + `hsp_check_requirements` (what a payee demands),
+  and `hsp_build_mandate` (an unsigned mandate + its hash). **To actually pay, the agent
+  uses `@hsp/sdk` (`HSPClient.pay` / `payX402`)** — the MCP signs nothing.
+- **`skills/hsp-verify`** — an AI skill that teaches an agent to *verify & reason about*
+  HSP payments: verify / explain a received payment, inspect/decode wire objects, resolve
+  capabilities, and check requirements. It moves no money and holds no key. **To actually
+  pay, use `@hsp/sdk`.**
 
-Point the MCP server at `<COORDINATOR_URL>` and your demo key (`.mcp.json.example`
-shows the registration).
+The MCP needs only `HSP_CHAIN`; optionally pin the adapter address
+(`HSP_PINNED_ADAPTER_ADDRESS`) so `hsp_verify` can check receipts. The
+`.mcp.json.example` in the repo shows the registration.
 
 ---
 
