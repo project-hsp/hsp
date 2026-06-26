@@ -12,7 +12,8 @@
         "HSP_STABLECOIN_ANVIL_DEV": "0xYOUR_TOKEN:MUSDC:6",
         "HSP_PINNED_ADAPTER_ADDRESS": "0xCOORDINATOR_ADAPTER_ADDRESS",
         "HSP_X402_DOMAINS": "merchant.example.com",
-        "HSP_COMPLIANCE_ISSUER": "0xISSUER_ADDRESS"
+        "HSP_KYC_ISSUER": "0xKYC_ISSUER_ADDRESS,0xANOTHER_KYC_ISSUER",
+        "HSP_SANCTIONS_ISSUER": "0xSANCTIONS_ISSUER_ADDRESS"
       }
     },
     "//phantom": "A WALLET MCP is the EXTERNAL SIGNER. The agent routes hsp_prepare_payment's toSign[] (each a standard eth_signTypedData_v4 / eth_sendTransaction request) to this wallet MCP to sign or broadcast, then calls hsp_submit_payment with the results. Spend limits / approvals live in the wallet, not in hsp. Swap for Coinbase Agentic Wallets, MetaMask, or the user's own wallet as you prefer.",

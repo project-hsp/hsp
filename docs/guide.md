@@ -510,7 +510,9 @@ what `hsp_verify` can check.
 | `HSP_STABLECOIN_<CHAIN>` | anvil only | `0xTOKEN:SYMBOL:DECIMALS` for per-run tokens |
 | `HSP_PINNED_ADAPTER_ADDRESS` | for `hsp_verify`/`hsp_explain` | the Coordinator's adapter observation address you pinned (or pass `adapterAddress` per call) |
 | `HSP_X402_DOMAINS` | optional | comma-separated merchant domains — to verify `adapter:x402` receipts |
-| `HSP_COMPLIANCE_ISSUER` | optional | trusted issuer address — to verify compliant (KYC/sanctions) receipts |
+| `HSP_KYC_ISSUER` / `HSP_SANCTIONS_ISSUER` | optional | comma-separated trusted-issuer address lists, per family — to verify compliant receipts. Any one trusted issuer satisfies the cap (mirrors the Coordinator) |
+| `HSP_POLICY_REQUIRED_CAPS` | optional | comma tags the mandate MUST declare (e.g. `kyc,sanctions`); default none |
+| `HSP_COMPLIANCE_ISSUER` | optional | shorthand — its address(es) trusted for BOTH kyc + sanctions |
 
 There is still no `HSP_AGENT_PRIVATE_KEY`, `HSP_MAX_AMOUNT_BASE_UNITS`, `HSP_DAILY_CAP_BASE_UNITS`,
 or `HSP_RECIPIENT_ALLOWLIST`: the server **signs nothing** and holds no signing key — the wallet MCP

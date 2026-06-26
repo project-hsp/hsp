@@ -244,7 +244,8 @@ const TOOLS = [
     inputSchema: A({
       mode: S("'public' (default) | 'compliance'"),
       compliance: { type: 'array', description: 'for mode=compliance: tags to require, e.g. ["kyc","sanctions"]' },
-      issuerAddress: S('for mode=compliance: the trusted issuer address (0x…)'),
+      issuerAddress: S('for mode=compliance: a trusted issuer address (0x…) — or use "issuers" for several'),
+      issuers: { type: 'array', description: 'for mode=compliance: multiple trusted issuer addresses, each trusted for the requested tags' },
     }),
   },
   {
@@ -428,10 +429,16 @@ export function buildServer(deps: McpDeps): Server {
           let req: MandateRequirements;
           if (args.mode === 'compliance') {
             const tags = (args.compliance as string[] | undefined) ?? ['kyc', 'sanctions'];
-            const issuerAddress = getAddress(String(args.issuerAddress)) as Address;
+            const addrs = [
+              ...(args.issuerAddress != null ? [String(args.issuerAddress)] : []),
+              ...(((args.issuers as string[] | undefined) ?? []).map(String)),
+            ].map((a) => getAddress(a) as Address);
+            if (addrs.length === 0) throw new Error('mode=compliance requires issuerAddress or issuers[]');
             req = buildComplianceRequirements(deps.chain, {
               expiresAt,
-              trustedIssuers: tags.map((t) => ({ family: `attests:${t}:v1` as ComplianceFamily, issuerAddress })),
+              trustedIssuers: tags.flatMap((t) =>
+                addrs.map((issuerAddress) => ({ family: `attests:${t}:v1` as ComplianceFamily, issuerAddress })),
+              ),
               policyRequiredCaps: resolveComplianceCaps(tags as never),
             });
           } else {
