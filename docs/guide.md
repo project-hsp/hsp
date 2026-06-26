@@ -188,6 +188,55 @@ Everything runs from TypeScript source via `tsx` — there is deliberately no bu
 contributor machine, everything runs inside Docker (`docker/dev.Dockerfile` carries node + anvil +
 forge); see [§8.4](#84-local-protocol-development).
 
+### 2.1 Roles — who signs what, who pins what
+
+HSP's **operational roles** are four — two *operators* that sign evidence (**Adapter Operator**,
+**Issuer**), the **Coordinator** hub, and the **Verifier** — plus the **payer**, who originates and
+signs the mandate. Three parties *produce* signed evidence; the verifier *consumes* it and decides;
+the hub distributes it.
+
+| Role | Holds | Produces / does | What a verifier does about it |
+|---|---|---|---|
+| **Payer** | a wallet key | signs the **Mandate** (EIP-712), moves the funds | recovers the signer from the mandate — nothing to pin |
+| **Adapter Operator** | the adapter key (attestation only — *never* custody) | observes settlement on-chain, signs the **Receipt** | **pins** its signing address as `adapterAddress` |
+| **Issuer** (Attestation Operator) | the issuer key | signs an **Attestation** (KYC / sanctions / …) | **pins** its address in `trustedIssuers` |
+| **Coordinator** (hub) | no trust/signing key | registers, **sequences**, persists, serves the triple | treats it as a *data source*, not a trust root |
+| **Verifier** | nothing — it *pins* public keys | runs the pure-function `verify()` → ACCEPT / REJECT | *is* the relying party |
+
+**The key symmetry:** a **Receipt** (a settlement attestation, signed by an adapter operator) and an
+**Attestation** (a compliance attestation, signed by an issuer) are the same shape — *a signed
+statement an operator stands behind*. A verifier trusts a chosen **set of each**, and that pair —
+`{ adapter operators, issuers }`, plus the chain/domain it already knows — *is* its entire trust
+config. The two halves are published at `GET /adapter-operators` and `GET /issuers`.
+
+```
+  Payer            ─signs▶ Mandate       (and the payer's wallet moves the funds on-chain)
+  Adapter Operator ─signs▶ Receipt       "I observed this settlement"     ← pin its key as adapterAddress
+  Issuer           ─signs▶ Attestation   "I vouch this subject is KYC'd"  ← pin its key in trustedIssuers
+        │
+        ▼
+  Coordinator (hub): registers · sequences · persists · serves the (mandate, receipt, attestations) triple
+        │
+        ▼
+  Verifier (any relying party): pins { adapter operators, issuers }, runs verify() → ACCEPT / REJECT
+                                (it trusts the signing KEYS, never the hub itself)
+```
+
+**What the reference deployment collapses.** The protocol keeps these roles distinct; this repo's
+reference deployment *already separates some* and *collapses others for convenience*:
+
+- **Already separate services** — the **Issuer** and the stock **x402 facilitator** (a plain
+  settlement service that holds *no* HSP key; the Coordinator is the `adapter:x402` operator).
+- **Collapsed into the Coordinator process** — the **hub** + the **Adapter Operator** (it holds the
+  adapter key, reads the chain, signs receipts) + a **built-in Verifier**.
+
+That built-in verifier is **the Coordinator's own opinion under its own policy** — it computes the
+displayed `status` and gates which receipts the hub admits. It is **not a trust root**: a relying
+party reaches its *own* verdict by pinning its *own* `{ adapter operators, issuers }` and may differ
+(e.g. require compliance the hub does not). A deployment configured with **no issuers** is therefore a
+*minimal, trust-free hub* — public-path payments only, with all trust pushed out to relying-party
+verifiers.
+
 ---
 
 ## 3. The Coordinator — API reference
