@@ -89,6 +89,10 @@ const TERMINAL = new Set(['SETTLED', 'FAILED', 'DISPUTED', 'EXPIRED']);
 export class HSPClient {
   constructor(private readonly opts: HSPClientOptions) {}
 
+  /** Plan P: cached adapter-operator public URL for this chain
+   *  (undefined = not yet resolved, null = none advertised → use the hub's /observe). */
+  private operatorUrlCache: string | null | undefined;
+
   get address(): Address {
     return signerAddress(this.opts.signer);
   }
@@ -165,7 +169,9 @@ export class HSPClient {
     return txHash;
   }
 
-  /** POST observe; retries while the Coordinator answers 202 (pending/confirming). */
+  /** POST observe; retries while the answer is 202 (pending/confirming). Plan P: if the hub
+   *  advertises an adapter operator, the payer calls IT directly (operator owns seq + submits
+   *  the receipt to the hub); else falls back to the hub's own /observe. */
   async observe(
     paymentId: Hex,
     txHash: Hex,
@@ -173,9 +179,12 @@ export class HSPClient {
   ): Promise<{ status: string }> {
     const retries = opts.retries ?? 30;
     const delayMs = opts.delayMs ?? 2000;
-    const body = { txHash };
+    const operatorUrl = await this.resolveOperatorUrl();
+    const coordinatorUrl = this.opts.coordinatorUrl.replace(/\/$/, '');
     for (let i = 0; i <= retries; i++) {
-      const r = await this.http('POST', `/payments/${paymentId}/observe`, body);
+      const r = operatorUrl
+        ? await this.postAbs(`${operatorUrl}/observe/evm-transfer`, { coordinatorUrl, paymentId, txHash })
+        : await this.http('POST', `/payments/${paymentId}/observe`, { txHash });
       if (r.status === 202) {
         await new Promise((res) => setTimeout(res, delayMs));
         continue;
@@ -298,9 +307,22 @@ export class HSPClient {
     // the COORDINATOR is the adapter:x402 operator: hand it the EIP-3009 proof + txHash so it reads
     // the chain, signs the adapter:x402 receipt, and verifies → SETTLED (never assume SETTLED).
     const merchantDomain = p.merchantDomain ?? (await this.facilitatorMerchantDomain(fbase));
-    const x402 = await this.http('POST', `/payments/${mandateHash}/x402-observe`, {
-      authorization, signature, tokenName, tokenVersion, txHash: settle.transaction, merchantDomain,
-    });
+    // Plan P: hand the EIP-3009 proof + txHash to the operator directly (it owns its seq +
+    // submits the receipt to the hub); else the hub's own /x402-observe. Retry while 202.
+    const operatorUrl = await this.resolveOperatorUrl();
+    const coordinatorUrl = this.opts.coordinatorUrl.replace(/\/$/, '');
+    const evidence = { authorization, signature, tokenName, tokenVersion, txHash: settle.transaction, merchantDomain };
+    let x402: { status: number; json: unknown } = { status: 0, json: null };
+    for (let i = 0; i <= 30; i++) {
+      x402 = operatorUrl
+        ? await this.postAbs(`${operatorUrl}/observe/x402`, { coordinatorUrl, paymentId: mandateHash, ...evidence })
+        : await this.http('POST', `/payments/${mandateHash}/x402-observe`, evidence);
+      if (x402.status === 202) {
+        await new Promise((res) => setTimeout(res, 2000));
+        continue;
+      }
+      break;
+    }
     if (x402.status !== 200 && x402.status !== 201) {
       throw new Error(`x402 settled on-chain (tx ${settle.transaction}) but the Coordinator rejected it: HTTP ${x402.status} ${JSON.stringify(x402.json)}`);
     }
@@ -359,5 +381,36 @@ export class HSPClient {
       /* non-JSON */
     }
     return { status: res.status, json };
+  }
+
+  /** POST to an absolute URL (the adapter operator, off-hub). No Coordinator auth header. */
+  private async postAbs(url: string, body: unknown): Promise<{ status: number; json: unknown }> {
+    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    let json: unknown = null;
+    try {
+      json = await res.json();
+    } catch {
+      /* non-JSON */
+    }
+    return { status: res.status, json };
+  }
+
+  /**
+   * Plan P: the adapter operator's PUBLIC base URL advertised by the hub (GET /chains →
+   * adapterOperatorUrl). When present, the payer calls the operator's /observe directly
+   * (the operator owns its seq + submits the receipt to the hub). null → no operator is
+   * advertised, so observe falls back to the hub's own /observe (in-process / hub-delegated).
+   */
+  private async resolveOperatorUrl(): Promise<string | null> {
+    if (this.operatorUrlCache !== undefined) return this.operatorUrlCache;
+    try {
+      const r = await this.http('GET', '/chains');
+      const chains = (r.json as Array<{ name: string; adapterOperatorUrl?: string | null }>) ?? [];
+      const entry = chains.find((c) => c.name === this.chainName);
+      this.operatorUrlCache = entry?.adapterOperatorUrl ? entry.adapterOperatorUrl.replace(/\/$/, '') : null;
+    } catch {
+      this.operatorUrlCache = null;
+    }
+    return this.operatorUrlCache;
   }
 }
