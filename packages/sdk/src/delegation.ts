@@ -3,7 +3,7 @@
  *
  * A delegated payment has two signers and a smart-account Principal:
  *   - the PRINCIPAL (an erc1271 smart account) signs a DelegationGrant (signGrant, signer.ts)
- *   - the AGENT (an EOA) signs each PaymentExecution with grantRef = grantHash
+ *   - the AGENT (an EOA) signs each Mandate with grantRef = grantHash
  *   - the Principal's ACCOUNT executes the ERC-20 transfer, so Transfer.from = the account
  *
  * `buildDelegationGrant` constructs the grant body; `AccountExecutor` abstracts the

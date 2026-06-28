@@ -4,11 +4,11 @@
  * Each function pins ONE normative MUST from the single-doc spec (HSP.md):
  *   - capabilityId               HSP.md §3.1 (id) + §3.1.4 (canonical params)
  *   - requiredCapabilitiesHash   HSP.md §3.1.3
- *   - executionHash                HSP.md §2.4.1
+ *   - mandateHash                HSP.md §2.4.1
  *   - receiptHash                HSP.md §2.4.2
  *
  * The EIP-712 field set/order/types below are pinned to HSP.md by src/guard.ts
- * (run as part of `npm run verify`): if the spec's EXECUTION_TYPEHASH moves,
+ * (run as part of `npm run verify`): if the spec's MANDATE_TYPEHASH moves,
  * the guard fails until this file is updated and fixtures are re-frozen.
  *
  * If you find a discrepancy between this file and the spec, the spec wins —
@@ -145,7 +145,7 @@ export function requiredCapabilitiesHash(capabilities: Hex[]): Hex {
 }
 
 // =============================================================================
-// EIP-712: executionHash   HSP.md §2.4.1
+// EIP-712: mandateHash   HSP.md §2.4.1
 // =============================================================================
 
 export interface DomainInput {
@@ -165,7 +165,7 @@ export interface RecipientInput {
   payload: Hex;
 }
 
-export interface PaymentExecutionInput {
+export interface MandateInput {
   nonce: Hex;
   signer: SignerInput;
   grantRef?: Hex;                  // §2.1.2; NONE (ZERO32) for self-pay — defaults below
@@ -179,7 +179,7 @@ export interface PaymentExecutionInput {
   requiredCapabilitiesHash: Hex;
 }
 
-// NONE sentinel for the three optional PaymentExecution refs (self-pay leaves them ZERO32).
+// NONE sentinel for the three optional Mandate refs (self-pay leaves them ZERO32).
 const NONE32: Hex = `0x${'00'.repeat(32)}`;
 
 export const NESTED_TYPES = {
@@ -194,10 +194,10 @@ export const NESTED_TYPES = {
   ],
 } as const;
 
-// PaymentExecution field order — MUST match HSP.md §2.4.1 EXECUTION_TYPEHASH.
+// Mandate field order — MUST match HSP.md §2.4.1 MANDATE_TYPEHASH.
 // v-next spec: 11 fields (v0 MandateBody was 8; grantRef/requirementRef/settlementBinding added).
 // (Field set/order/types pinned to the spec by src/guard.ts.)
-export const EXECUTION_FIELDS = [
+export const MANDATE_FIELDS = [
   { name: 'nonce', type: 'bytes32' },
   { name: 'signer', type: 'Signer' },
   { name: 'grantRef', type: 'bytes32' },
@@ -211,7 +211,7 @@ export const EXECUTION_FIELDS = [
   { name: 'requiredCapabilitiesHash', type: 'bytes32' },
 ] as const;
 
-function bodyMessage(b: PaymentExecutionInput): Record<string, unknown> {
+function bodyMessage(b: MandateInput): Record<string, unknown> {
   return {
     nonce: b.nonce,
     signer: { profileId: b.signer.profileId, payload: b.signer.payload },
@@ -233,27 +233,27 @@ function bodyMessage(b: PaymentExecutionInput): Record<string, unknown> {
 
 type HashTypedDataArgs = Parameters<typeof hashTypedData>[0];
 
-export function executionHash(domain: DomainInput, body: PaymentExecutionInput): Hex {
+export function mandateHash(domain: DomainInput, body: MandateInput): Hex {
   return hashTypedData({
     domain,
     types: {
-      PaymentExecution: [...EXECUTION_FIELDS],
+      Mandate: [...MANDATE_FIELDS],
       ...NESTED_TYPES,
     },
-    primaryType: 'PaymentExecution',
+    primaryType: 'Mandate',
     message: bodyMessage(body),
   } as unknown as HashTypedDataArgs);
 }
 
 // =============================================================================
 // EIP-712: grantHash   HSP.md §2.4.1a (delegated payments)
-//   The Principal signs grantHash; PaymentExecution.grantRef commits to it.
+//   The Principal signs grantHash; Mandate.grantRef commits to it.
 //   GRANT_TYPEHASH covers every field EXCEPT principalProof (envelope-only, §2.1.1).
 // =============================================================================
 
 export interface DelegationGrantInput {
   principal: SignerInput;          // account/fund owner; typically erc1271.v1 (a smart account)
-  agent: SignerInput;              // the identity authorized to sign PaymentExecutions
+  agent: SignerInput;              // the identity authorized to sign Mandates
   onchainPermissionRef: Hex;       // bytes32 — ERC-7715 permissionId / ERC-4337 session-key ref
   payerRequiredCaps: Hex[];        // payer-side FLOOR every execution MUST cover
   payerAllowedCaps: Hex[];         // payer-side CEILING the Agent may declare
@@ -308,7 +308,7 @@ export function grantHash(domain: DomainInput, grant: DelegationGrantInput): Hex
 // =============================================================================
 
 export interface ReceiptInput {
-  executionHash: Hex;
+  mandateHash: Hex;
   adapterId: Hex;
   adapterInstanceKey: Hex;
   seq: number | string;
@@ -323,7 +323,7 @@ export interface ReceiptInput {
 // (= keccak256(adapterProof), D2). Field set/order/types pinned to the spec by
 // src/guard.ts (RECEIPT_PREIMAGE_TYPEHASH check). No nested struct types.
 export const RECEIPT_PREIMAGE_FIELDS = [
-  { name: 'executionHash', type: 'bytes32' },
+  { name: 'mandateHash', type: 'bytes32' },
   { name: 'adapterId', type: 'bytes32' },
   { name: 'adapterInstanceKey', type: 'bytes32' },
   { name: 'seq', type: 'uint64' },
@@ -340,7 +340,7 @@ export function receiptHash(domain: DomainInput, receipt: ReceiptInput): Hex {
     types: { ReceiptPreimage: [...RECEIPT_PREIMAGE_FIELDS] },
     primaryType: 'ReceiptPreimage',
     message: {
-      executionHash: receipt.executionHash,
+      mandateHash: receipt.mandateHash,
       adapterId: receipt.adapterId,
       adapterInstanceKey: receipt.adapterInstanceKey,
       seq: BigInt(receipt.seq),
@@ -364,7 +364,7 @@ export function preprocessInput(
   switch (derivation) {
     case 'requiredCapabilitiesHash':
       return preprocessRequiredCapsInput(input);
-    case 'executionHash':
+    case 'mandateHash':
       return preprocessMandateLikeInput(input);
     default:
       // No preprocessing for other derivations.

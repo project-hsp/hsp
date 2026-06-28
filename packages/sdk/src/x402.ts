@@ -6,7 +6,7 @@
  * The resource server prices a route in x402 terms; the gate emits the `402` +
  * `PAYMENT-REQUIRED` challenge, then verifies (and settles) a returned
  * `PAYMENT-SIGNATURE` via the facilitator. HSP rides `extensions.hsp`: an HSP-aware
- * payer carries its SignedExecution there, and the facilitator bridges it to a
+ * payer carries its SignedMandate there, and the facilitator bridges it to a
  * verifiable HSP receipt at settle (P2) — a stock x402 payer simply omits it and
  * still pays. See docs/design/x402-alignment.md §6 (P3).
  *
@@ -37,10 +37,10 @@ import {
   type VerifyResponse,
   type SettleResponse,
 } from '@hsp/core/x402/index';
-import { requiredCapabilitiesHash, type PaymentExecution, type SignedExecution } from '@hsp/core';
+import { requiredCapabilitiesHash, type Mandate, type SignedMandate } from '@hsp/core';
 import { eip712EoaSigner } from '@hsp/core/profiles/signer/eip712-eoa';
 import { chainDomain, type ChainConfig } from '@hsp/core/chains/index';
-import { signEip3009Authorization, signerAddress, signPaymentExecution, type HSPSigner } from './signer.js';
+import { signEip3009Authorization, signerAddress, signMandateBody, type HSPSigner } from './signer.js';
 
 export interface X402GateOptions {
   /** Facilitator base URL (POST /verify + /settle). */
@@ -141,7 +141,7 @@ export async function x402Gate(req: Request, opts: X402GateOptions): Promise<X40
   };
   // the COORDINATOR is the adapter:x402 operator — bridge the HSP mandate (if the payer rode one)
   // to a verifiable receipt: register it + submit the EIP-3009 proof + txHash for the Coordinator to sign.
-  const mandate = (paymentPayload.extensions?.['hsp'] as { mandate?: SignedExecution } | undefined)?.mandate;
+  const mandate = (paymentPayload.extensions?.['hsp'] as { mandate?: SignedMandate } | undefined)?.mandate;
   if (opts.hspBridge && mandate && settleResponse.transaction) {
     result.hsp = await bridgeGateToHsp(opts.hspBridge, mandate, paymentPayload, paymentRequirements, settleResponse, doFetch);
   }
@@ -152,7 +152,7 @@ export async function x402Gate(req: Request, opts: X402GateOptions): Promise<X40
  * Coordinator (the adapter:x402 operator), which reads the chain and signs the receipt itself. */
 async function bridgeGateToHsp(
   cfg: { coordinatorUrl: string; coordinatorApiKey: string; chainName: string; merchantDomain: string },
-  mandate: SignedExecution,
+  mandate: SignedMandate,
   payload: PaymentPayload,
   req: PaymentRequirements,
   settle: SettleResponse,
@@ -201,7 +201,7 @@ export interface X402PaidResponse {
   paid: boolean;
   /** Decoded `PAYMENT-RESPONSE` (settlement result), when present. */
   settleResponse?: SettleResponse;
-  /** The HSP paymentId (executionHash) when an HSP mandate was attached. */
+  /** The HSP paymentId (mandateHash) when an HSP mandate was attached. */
   paymentId?: Hex;
 }
 
@@ -210,7 +210,7 @@ function selectRequirement(pr: PaymentRequired): PaymentRequirements | undefined
   return pr.accepts.find((r) => r.scheme === 'exact' && /^eip155:\d+$/.test(r.network) && r.extra?.['name'] !== undefined);
 }
 
-function buildHspMandate(signer: HSPSigner, chain: ChainConfig, req: PaymentRequirements, deadline: number): PaymentExecution {
+function buildHspMandate(signer: HSPSigner, chain: ChainConfig, req: PaymentRequirements, deadline: number): Mandate {
   return {
     nonce: toHex(crypto.getRandomValues(new Uint8Array(32))),
     signer: { profileId: eip712EoaSigner.profileIdHash, payload: encodeAbiParameters([{ type: 'address' }], [signerAddress(signer)]) },
@@ -261,10 +261,10 @@ export async function fetchWithX402(input: string | URL, init: RequestInit | und
   if (opts.hsp) {
     if (opts.hsp.chain.chainId !== tokenDomain.chainId) throw new Error('hsp.chain.chainId does not match the x402 requirement network');
     const body = buildHspMandate(opts.signer, opts.hsp.chain, req, validBefore);
-    const { executionHash, signerProof } = await signPaymentExecution(opts.signer, chainDomain(opts.hsp.chain), body);
-    const mandate: SignedExecution = { body, signerProof, requiredCapabilities: [] };
+    const { mandateHash, signerProof } = await signMandateBody(opts.signer, chainDomain(opts.hsp.chain), body);
+    const mandate: SignedMandate = { body, signerProof, requiredCapabilities: [] };
     extensions = { hsp: { mandate } };
-    paymentId = executionHash;
+    paymentId = mandateHash;
   }
 
   const pp: PaymentPayload = { x402Version: 2, accepted: req, payload: { signature, authorization }, ...(extensions ? { extensions } : {}) };

@@ -2,7 +2,7 @@
  * Delegation e2e — REAL anvil settlement from a smart-account Principal.
  *
  * Alice (a MockERC1271Account smart account, owner = Alice's EOA) delegates to an Agent
- * (a separate EOA). The Agent signs the PaymentExecution; Alice signs the DelegationGrant
+ * (a separate EOA). The Agent signs the Mandate; Alice signs the DelegationGrant
  * (verified ON-CHAIN via the account's isValidSignature); Alice's account executes the
  * ERC-20 transfer so the settlement `Transfer.from` is the ACCOUNT (the Principal). The
  * Verifier resolves payer = the smart account, binds the sender to accountOf(principal),
@@ -32,12 +32,12 @@ import {
 import { privateKeyToAccount } from 'viem/accounts';
 import { anvil } from 'viem/chains';
 import {
-  executionHash as computeMandateHash,
+  mandateHash as computeMandateHash,
   grantHash as computeGrantHash,
   requiredCapabilitiesHash,
-  type SignedExecution,
+  type SignedMandate,
   type SignedDelegationGrant,
-  type PaymentExecution,
+  type Mandate,
   type DelegationGrantInput,
   type DomainInput,
 } from '@hsp/core';
@@ -132,8 +132,8 @@ async function main(): Promise<void> {
     const principalProof = await signMandateHash(ALICE_PK, gHash); // Alice (owner) signs; account.isValidSignature validates
     const signedGrant: SignedDelegationGrant = { body: grantBody, principalProof };
 
-    // The Agent signs a PaymentExecution referencing the grant
-    const body: PaymentExecution = {
+    // The Agent signs a Mandate referencing the grant
+    const body: Mandate = {
       nonce: keccak256(stringToBytes('delegation-exec-1')),
       signer: { profileId: eip712EoaSigner.profileIdHash, payload: encodeAbiParameters([{ type: 'address' }], [agent.address]) },
       grantRef: gHash,
@@ -148,7 +148,7 @@ async function main(): Promise<void> {
     };
     const mh = computeMandateHash(domain, body);
     const signerProof = await signMandateHash(AGENT_PK, mh);
-    const mandate: SignedExecution = { body, signerProof, requiredCapabilities: [] };
+    const mandate: SignedMandate = { body, signerProof, requiredCapabilities: [] };
 
     // Alice's account executes the transfer → Transfer.from = the account (the Principal)
     const transferData = encodeFunctionData({ abi: ERC20.abi, functionName: 'transfer', args: [BOB, AMOUNT] });
@@ -157,7 +157,7 @@ async function main(): Promise<void> {
     const observation = await observeTransfer(publicClient, { txHash: settleTx, token, chainId });
     check('settlement Transfer.from == the smart account', getAddress(observation.from) === account);
 
-    const receipt = await buildAndSignReceipt({ domain, executionHash: mh, observation, adapterPrivateKey: ADAPTER_PK, settledAt: SETTLED_AT });
+    const receipt = await buildAndSignReceipt({ domain, mandateHash: mh, observation, adapterPrivateKey: ADAPTER_PK, settledAt: SETTLED_AT });
 
     const policy: VerificationPolicy = {
       verifyingContract: VERIFYING_CONTRACT,
@@ -192,10 +192,10 @@ async function main(): Promise<void> {
 
     // 4 — an impostor agent signs the same execution terms → agent mismatch
     const other = privateKeyToAccount(OTHER_PK);
-    const impostorBody: PaymentExecution = { ...body, signer: { profileId: eip712EoaSigner.profileIdHash, payload: encodeAbiParameters([{ type: 'address' }], [other.address]) } };
+    const impostorBody: Mandate = { ...body, signer: { profileId: eip712EoaSigner.profileIdHash, payload: encodeAbiParameters([{ type: 'address' }], [other.address]) } };
     const impostorMh = computeMandateHash(domain, impostorBody);
-    const impostorMandate: SignedExecution = { body: impostorBody, signerProof: await signMandateHash(OTHER_PK, impostorMh), requiredCapabilities: [] };
-    const impostorReceipt = await buildAndSignReceipt({ domain, executionHash: impostorMh, observation, adapterPrivateKey: ADAPTER_PK, settledAt: SETTLED_AT });
+    const impostorMandate: SignedMandate = { body: impostorBody, signerProof: await signMandateHash(OTHER_PK, impostorMh), requiredCapabilities: [] };
+    const impostorReceipt = await buildAndSignReceipt({ domain, mandateHash: impostorMh, observation, adapterPrivateKey: ADAPTER_PK, settledAt: SETTLED_AT });
     const impostor = await verify(impostorMandate, impostorReceipt, [], policy, new SeqIndex(), new ObservationIndex(), signedGrant);
     check('impostor agent → HSP-GRANT-AGENT-MISMATCH', !impostor.ok && impostor.errorCode === 'HSP-GRANT-AGENT-MISMATCH');
 

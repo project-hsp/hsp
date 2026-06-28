@@ -1,7 +1,7 @@
 /**
  * M1 end-to-end — public (trivial) payment over the mock EVM-transfer adapter.
  *
- * Builds + signs a public-payment SignedExecution, has the Adapter Operator emit a
+ * Builds + signs a public-payment SignedMandate, has the Adapter Operator emit a
  * signed Receipt for an observed ERC-20 Transfer, runs the full Verifier (§5.1+§5.2),
  * and asserts ACCEPT plus a spread of negative cases (each pinned to its §8.0 class +
  * §8 code). Runnable: `npx tsx src/e2e/public.ts`. No foundry — the Transfer
@@ -13,12 +13,12 @@
 import { encodeAbiParameters, keccak256, stringToBytes, getAddress, type Hex, type Address } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
-  executionHash as computeMandateHash,
+  mandateHash as computeMandateHash,
   requiredCapabilitiesHash,
   makeCap,
   Outcome,
-  type SignedExecution,
-  type PaymentExecution,
+  type SignedMandate,
+  type Mandate,
   type DomainInput,
 } from '@hsp/core';
 import { eip712EoaSigner, signMandateHash } from '@hsp/core/profiles/signer/eip712-eoa';
@@ -51,7 +51,7 @@ const AMOUNT = 9_990_000n;
 
 const domain: DomainInput = { name: 'HSP', version: '1', chainId: CHAIN_ID, verifyingContract: VERIFYING_CONTRACT };
 
-function buildBody(over: Partial<PaymentExecution> = {}): PaymentExecution {
+function buildBody(over: Partial<Mandate> = {}): Mandate {
   return {
     nonce: keccak256(stringToBytes('m1-public-1')),
     signer: {
@@ -68,7 +68,7 @@ function buildBody(over: Partial<PaymentExecution> = {}): PaymentExecution {
   };
 }
 
-async function signedMandate(body: PaymentExecution, reqCaps: Hex[] = [], signWith: Hex = PAYER_PK): Promise<SignedExecution> {
+async function signedMandate(body: Mandate, reqCaps: Hex[] = [], signWith: Hex = PAYER_PK): Promise<SignedMandate> {
   const mh = computeMandateHash(domain, body);
   const signerProof = await signMandateHash(signWith, mh);
   return {
@@ -141,7 +141,7 @@ async function main(): Promise<void> {
     const body = buildBody();
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
-    const r = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
+    const r = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
     await check('public payment settles', await verify(m, r, [], basePolicy(), new SeqIndex()), { ok: true, outcomeClass: 'ACCEPT' });
   }
 
@@ -151,12 +151,12 @@ async function main(): Promise<void> {
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
     // (a) an on-time settlement stays verifiable AFTER the deadline
-    const rOk = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME });
+    const rOk = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME });
     await check('late verification of on-time settlement', await verify(m, rOk, [], basePolicy({ evaluationTime: DEADLINE + 1 }), new SeqIndex()), {
       ok: true, outcomeClass: 'ACCEPT',
     });
     // (b) settlement after the deadline is expired — whenever it is verified
-    const rLate = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: DEADLINE + 5 });
+    const rLate = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: DEADLINE + 5 });
     await check('settled after deadline', await verify(m, rLate, [], basePolicy({ evaluationTime: DEADLINE + 100 }), new SeqIndex()), {
       ok: false, outcomeClass: 'PERMANENT', errorCode: 'HSP-MAND-EXPIRED',
     });
@@ -167,7 +167,7 @@ async function main(): Promise<void> {
     const body = buildBody();
     const m = await signedMandate(body, [], ADAPTER_PK);
     const mh = computeMandateHash(domain, body);
-    const r = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
+    const r = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
     await check('wrong signer key', await verify(m, r, [], basePolicy(), new SeqIndex()), {
       ok: false, outcomeClass: 'PERMANENT', errorCode: 'HSP-MAND-SIGNER',
     });
@@ -184,9 +184,9 @@ async function main(): Promise<void> {
     const v = parseInt(m.signerProof.slice(130, 132), 16);
     const sPrime = (SECP256K1_N - s).toString(16).padStart(64, '0');
     const vPrime = (v === 27 ? 28 : 27).toString(16).padStart(2, '0');
-    const malleated: SignedExecution = { ...m, signerProof: `0x${rHex}${sPrime}${vPrime}` as Hex };
+    const malleated: SignedMandate = { ...m, signerProof: `0x${rHex}${sPrime}${vPrime}` as Hex };
     const mh = computeMandateHash(domain, body);
-    const rcpt = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
+    const rcpt = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
     await check('high-s malleated signature rejected', await verify(malleated, rcpt, [], basePolicy(), new SeqIndex()), {
       ok: false, outcomeClass: 'PERMANENT', errorCode: 'HSP-MAND-SIGNER',
     });
@@ -199,7 +199,7 @@ async function main(): Promise<void> {
     });
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
-    const r = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
+    const r = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
     await check('unknown signer profile', await verify(m, r, [], basePolicy(), new SeqIndex()), {
       ok: false, outcomeClass: 'POLICY', errorCode: 'HSP-MAND-SIGNER-PROFILE-UNKNOWN',
     });
@@ -210,7 +210,7 @@ async function main(): Promise<void> {
     const body = buildBody(); // requiredCapabilitiesHash = hash([])
     const m = await signedMandate(body, [makeCap('hides:amount:v1').id]); // envelope claims a cap
     const mh = computeMandateHash(domain, body);
-    const r = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
+    const r = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
     await check('reqcaps hash mismatch', await verify(m, r, [], basePolicy(), new SeqIndex()), {
       ok: false, outcomeClass: 'PERMANENT', errorCode: 'HSP-MAND-REQHASH-MISMATCH',
     });
@@ -221,7 +221,7 @@ async function main(): Promise<void> {
     const body = buildBody();
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
-    const r = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
+    const r = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
     await check('untrusted adapter', await verify(m, r, [], basePolicy({ adapterTrust: new Map() }), new SeqIndex()), {
       ok: false, outcomeClass: 'POLICY', errorCode: 'HSP-RCPT-SIG',
     });
@@ -232,7 +232,7 @@ async function main(): Promise<void> {
     const body = buildBody();
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
-    const r = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: PAYER_PK, settledAt: EVAL_TIME - 10 });
+    const r = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: PAYER_PK, settledAt: EVAL_TIME - 10 });
     await check('adapter sig wrong key', await verify(m, r, [], basePolicy(), new SeqIndex()), {
       ok: false, outcomeClass: 'PERMANENT', errorCode: 'HSP-RCPT-SIG',
     });
@@ -243,7 +243,7 @@ async function main(): Promise<void> {
     const body = buildBody();
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
-    const r = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation({ value: AMOUNT + 1n }), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
+    const r = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation({ value: AMOUNT + 1n }), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
     await check('amount mismatch', await verify(m, r, [], basePolicy(), new SeqIndex()), {
       ok: false, outcomeClass: 'PERMANENT', errorCode: 'HSP-MAND-AMOUNT-OUTOFBOUNDS',
     });
@@ -254,7 +254,7 @@ async function main(): Promise<void> {
     const body = buildBody();
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
-    const r = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation({ from: RECIPIENT }), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
+    const r = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation({ from: RECIPIENT }), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
     await check('sender binding mismatch', await verify(m, r, [], basePolicy(), new SeqIndex()), {
       ok: false, outcomeClass: 'PERMANENT', errorCode: 'HSP-RCPT-PROOF',
     });
@@ -265,7 +265,7 @@ async function main(): Promise<void> {
     const body = buildBody();
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
-    const r = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation({ to: adapter.address }), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
+    const r = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation({ to: adapter.address }), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
     await check('recipient mismatch', await verify(m, r, [], basePolicy(), new SeqIndex()), {
       ok: false, outcomeClass: 'PERMANENT', errorCode: 'HSP-RCPT-PROOF',
     });
@@ -282,7 +282,7 @@ async function main(): Promise<void> {
     });
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
-    const r = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
+    const r = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
     await check('commitment mandate over plain transfer rejected', await verify(m, r, [], basePolicy(), new SeqIndex()), {
       ok: false, outcomeClass: 'PERMANENT', errorCode: 'HSP-RCPT-PROOF',
     });
@@ -293,7 +293,7 @@ async function main(): Promise<void> {
     const body = buildBody();
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
-    const r = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, outcome: Outcome.ATTEMPTED, settledAt: EVAL_TIME - 10 });
+    const r = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, outcome: Outcome.ATTEMPTED, settledAt: EVAL_TIME - 10 });
     await check('attempted is retryable', await verify(m, r, [], basePolicy(), new SeqIndex()), { ok: true, outcomeClass: 'RETRYABLE' });
   }
 
@@ -302,7 +302,7 @@ async function main(): Promise<void> {
     const body = buildBody();
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
-    const r = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, outcome: Outcome.ATTEMPTED, settledAt: EVAL_TIME - 10 });
+    const r = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, outcome: Outcome.ATTEMPTED, settledAt: EVAL_TIME - 10 });
     const policy = basePolicy({
       adapterTrust: new Map([
         [adapterKey(EVM_TRANSFER_ADAPTER_ID, ZERO32), { address: adapter.address, reorgPolicy: { allowsAttempted: false, chainObservation: 'required' } }],
@@ -319,9 +319,9 @@ async function main(): Promise<void> {
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
     const seqIndex = new SeqIndex();
-    const r1 = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, seq: 0, settledAt: EVAL_TIME - 20 });
+    const r1 = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, seq: 0, settledAt: EVAL_TIME - 20 });
     await check('first settle (seq0)', await verify(m, r1, [], basePolicy(), seqIndex), { ok: true, outcomeClass: 'ACCEPT' });
-    const r2 = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation({ txHash: keccak256(stringToBytes('tx-2')) }), adapterPrivateKey: ADAPTER_PK, seq: 0, settledAt: EVAL_TIME - 10 });
+    const r2 = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation({ txHash: keccak256(stringToBytes('tx-2')) }), adapterPrivateKey: ADAPTER_PK, seq: 0, settledAt: EVAL_TIME - 10 });
     await check('equivocation (seq0 conflict)', await verify(m, r2, [], basePolicy(), seqIndex), {
       ok: false, outcomeClass: 'PERMANENT', errorCode: 'HSP-RCPT-EQUIVOCATION',
     });
@@ -333,9 +333,9 @@ async function main(): Promise<void> {
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
     const seqIndex = new SeqIndex();
-    const r1 = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, seq: 1, settledAt: EVAL_TIME - 20 });
+    const r1 = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, seq: 1, settledAt: EVAL_TIME - 20 });
     await check('settle at seq1', await verify(m, r1, [], basePolicy(), seqIndex), { ok: true, outcomeClass: 'ACCEPT' });
-    const r2 = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, seq: 0, outcome: Outcome.ATTEMPTED, settledAt: EVAL_TIME - 10 });
+    const r2 = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation(), adapterPrivateKey: ADAPTER_PK, seq: 0, outcome: Outcome.ATTEMPTED, settledAt: EVAL_TIME - 10 });
     await check('lower seq is stale', await verify(m, r2, [], basePolicy(), seqIndex), {
       ok: false, outcomeClass: 'PERMANENT', errorCode: 'HSP-RCPT-SEQ-STALE',
     });
@@ -347,9 +347,9 @@ async function main(): Promise<void> {
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
     const seqIndex = new SeqIndex();
-    const r1 = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation({ txHash: keccak256(stringToBytes('tx-succ-1')) }), adapterPrivateKey: ADAPTER_PK, seq: 0, settledAt: EVAL_TIME - 30 });
+    const r1 = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation({ txHash: keccak256(stringToBytes('tx-succ-1')) }), adapterPrivateKey: ADAPTER_PK, seq: 0, settledAt: EVAL_TIME - 30 });
     await check('settles (seq0)', await verify(m, r1, [], basePolicy(), seqIndex), { ok: true, outcomeClass: 'ACCEPT' });
-    const r2 = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation({ txHash: keccak256(stringToBytes('tx-succ-2')) }), adapterPrivateKey: ADAPTER_PK, seq: 1, settledAt: EVAL_TIME - 20 });
+    const r2 = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation({ txHash: keccak256(stringToBytes('tx-succ-2')) }), adapterPrivateKey: ADAPTER_PK, seq: 1, settledAt: EVAL_TIME - 20 });
     await check('post-SETTLED SETTLED rejected', await verify(m, r2, [], basePolicy(), seqIndex), {
       ok: false, outcomeClass: 'PERMANENT', errorCode: 'HSP-RCPT-OUTCOME-INCONSISTENT',
     });
@@ -361,9 +361,9 @@ async function main(): Promise<void> {
     const m = await signedMandate(body);
     const mh = computeMandateHash(domain, body);
     const seqIndex = new SeqIndex();
-    const rF = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation({ txHash: keccak256(stringToBytes('tx-retry-fail')) }), adapterPrivateKey: ADAPTER_PK, seq: 0, outcome: Outcome.FAILED, settledAt: EVAL_TIME - 40 });
+    const rF = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation({ txHash: keccak256(stringToBytes('tx-retry-fail')) }), adapterPrivateKey: ADAPTER_PK, seq: 0, outcome: Outcome.FAILED, settledAt: EVAL_TIME - 40 });
     await check('attempt fails (seq0)', await verify(m, rF, [], basePolicy(), seqIndex), { ok: true, outcomeClass: 'PERMANENT' });
-    const rS = await buildAndSignReceipt({ domain, executionHash: mh, observation: observation({ txHash: keccak256(stringToBytes('tx-retry-ok')) }), adapterPrivateKey: ADAPTER_PK, seq: 1, settledAt: EVAL_TIME - 30 });
+    const rS = await buildAndSignReceipt({ domain, mandateHash: mh, observation: observation({ txHash: keccak256(stringToBytes('tx-retry-ok')) }), adapterPrivateKey: ADAPTER_PK, seq: 1, settledAt: EVAL_TIME - 30 });
     await check('fresh attempt settles (seq1)', await verify(m, rS, [], basePolicy(), seqIndex), { ok: true, outcomeClass: 'ACCEPT' });
   }
 
@@ -376,9 +376,9 @@ async function main(): Promise<void> {
     const bodyB = buildBody({ nonce: keccak256(stringToBytes('m1-obsB')) });
     const mA = await signedMandate(bodyA);
     const mB = await signedMandate(bodyB);
-    const rA = await buildAndSignReceipt({ domain, executionHash: computeMandateHash(domain, bodyA), observation: observation({ txHash: sharedTx }), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
+    const rA = await buildAndSignReceipt({ domain, mandateHash: computeMandateHash(domain, bodyA), observation: observation({ txHash: sharedTx }), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
     await check('first mandate consumes the observation', await verify(mA, rA, [], basePolicy(), seqIndex, obsIndex), { ok: true, outcomeClass: 'ACCEPT' });
-    const rB = await buildAndSignReceipt({ domain, executionHash: computeMandateHash(domain, bodyB), observation: observation({ txHash: sharedTx }), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 5 });
+    const rB = await buildAndSignReceipt({ domain, mandateHash: computeMandateHash(domain, bodyB), observation: observation({ txHash: sharedTx }), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 5 });
     await check('second mandate, same observation → OBS-REUSED', await verify(mB, rB, [], basePolicy(), seqIndex, obsIndex), {
       ok: false, outcomeClass: 'PERMANENT', errorCode: 'HSP-RCPT-OBS-REUSED',
     });

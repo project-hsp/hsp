@@ -28,10 +28,10 @@ import {
 import { privateKeyToAccount } from 'viem/accounts';
 import { anvil } from 'viem/chains';
 import {
-  executionHash as computeMandateHash,
+  mandateHash as computeMandateHash,
   requiredCapabilitiesHash,
-  type SignedExecution,
-  type PaymentExecution,
+  type SignedMandate,
+  type Mandate,
   type DomainInput,
 } from '@hsp/core';
 import { eip712EoaSigner, signMandateHash } from '@hsp/core/profiles/signer/eip712-eoa';
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
     const observation = await observeTransfer(publicClient, { txHash, token, chainId });
     const domain: DomainInput = { name: 'HSP', version: '1', chainId, verifyingContract: VERIFYING_CONTRACT };
 
-    const body: PaymentExecution = {
+    const body: Mandate = {
       nonce: keccak256(stringToBytes('anvil-public-1')),
       signer: { profileId: eip712EoaSigner.profileIdHash, payload: encodeAbiParameters([{ type: 'address' }], [payer.address]) },
       recipient: { kind: 0, payload: encodeAbiParameters([{ type: 'address' }], [RECIPIENT]) },
@@ -116,13 +116,13 @@ async function main(): Promise<void> {
     };
     const mh = computeMandateHash(domain, body);
     const signerProof = await signMandateHash(PAYER_PK, mh);
-    const mandate: SignedExecution = {
+    const mandate: SignedMandate = {
       body,
       signerProof,
       requiredCapabilities: [],
     };
 
-    const receipt = await buildAndSignReceipt({ domain, executionHash: mh, observation, adapterPrivateKey: ADAPTER_PK, settledAt: SETTLED_AT });
+    const receipt = await buildAndSignReceipt({ domain, mandateHash: mh, observation, adapterPrivateKey: ADAPTER_PK, settledAt: SETTLED_AT });
 
     const policy: VerificationPolicy = {
       verifyingContract: VERIFYING_CONTRACT,

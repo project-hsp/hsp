@@ -28,7 +28,7 @@ export async function validateCR2(
   expectedSubject: PartyRef | undefined,
   anchors: TrustAnchor[],
   now: number,
-  executionHash: Hex,
+  mandateHash: Hex,
   receiptHash: Hex,
   contextScope: 'mandate' | 'receipt' | undefined,
 ): Promise<CR2Result> {
@@ -61,11 +61,11 @@ export async function validateCR2(
     return { ok: false, code: 'HSP-ATT-INVALID' };
   }
 
-  // (e) contextBinding ∈ {0, executionHash, receiptHash} + §7.2.2 scope predicate
+  // (e) contextBinding ∈ {0, mandateHash, receiptHash} + §7.2.2 scope predicate
   const cb = entry.contextBinding.toLowerCase();
-  const inSet = cb === ZERO32 || cb === executionHash.toLowerCase() || cb === receiptHash.toLowerCase();
+  const inSet = cb === ZERO32 || cb === mandateHash.toLowerCase() || cb === receiptHash.toLowerCase();
   if (!inSet) return { ok: false, code: 'HSP-ATT-INVALID' };
-  if (contextScope === 'mandate' && cb !== executionHash.toLowerCase()) return { ok: false, code: 'HSP-ATT-INVALID' };
+  if (contextScope === 'mandate' && cb !== mandateHash.toLowerCase()) return { ok: false, code: 'HSP-ATT-INVALID' };
   if (contextScope === 'receipt' && cb !== receiptHash.toLowerCase()) return { ok: false, code: 'HSP-ATT-INVALID' };
 
   return { ok: true };

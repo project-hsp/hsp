@@ -20,7 +20,7 @@
  */
 
 import type { Address } from 'viem';
-import type { Attestation, Receipt, SignedExecution } from '@hsp/core';
+import type { Attestation, Receipt, SignedMandate } from '@hsp/core';
 import { verify, SeqIndex, ObservationIndex } from '@hsp/core/verifier/index';
 import type { AcceptDecision } from '@hsp/core/verifier/contracts';
 import { buildPublicPolicy } from '@hsp/core/policy/public';
@@ -43,7 +43,7 @@ export class HSPVerifier {
   constructor(private readonly pinned: PinnedTrustConfig) {}
 
   async verify(
-    mandate: SignedExecution,
+    mandate: SignedMandate,
     receipt: Receipt,
     attestations: Attestation[] = [],
     seqIndex: SeqIndex = new SeqIndex(),

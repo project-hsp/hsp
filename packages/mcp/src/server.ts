@@ -12,7 +12,7 @@
  *   hsp_capability_diff  — required vs satisfied capability sets → what's missing
  *   hsp_build_requirements — emit a §7.7 MandateRequirements (what a payee advertises)
  *   hsp_check_requirements — does a mandate satisfy a given MandateRequirements?
- *   hsp_build_mandate    — construct an UNSIGNED PaymentExecution + its executionHash (signing is external)
+ *   hsp_build_mandate    — construct an UNSIGNED Mandate + its mandateHash (signing is external)
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -35,13 +35,13 @@ import {
   BASELINE_CAP_FAMILIES,
   canonicalizeCapSet,
   makeCap,
-  executionHash as computeMandateHash,
+  mandateHash as computeMandateHash,
   grantHash as computeGrantHash,
   requiredCapabilitiesHash,
   type Attestation,
-  type PaymentExecution,
+  type Mandate,
   type Receipt,
-  type SignedExecution,
+  type SignedMandate,
   type SignedDelegationGrant,
 } from '@hsp/core';
 import { capLabel } from '@hsp/core/policy/labels';
@@ -133,9 +133,9 @@ function trustNote(receipt: Receipt, adapterAddress: Address): string {
 const ERC20_TRANSFER = parseAbi(['function transfer(address,uint256)']);
 const ERC20_DOMAIN = parseAbi(['function name() view returns (string)', 'function version() view returns (string)']);
 
-/** Build an unsigned PaymentExecution + its executionHash (random nonce — distinct payments don't collide). */
-function buildPaymentExecution(deps: McpDeps, p: { payer: Address; to: Address; amount: string; token: Address; deadline: number; caps: Hex[] }): { body: PaymentExecution; executionHash: Hex } {
-  const body: PaymentExecution = {
+/** Build an unsigned Mandate + its mandateHash (random nonce — distinct payments don't collide). */
+function buildMandate(deps: McpDeps, p: { payer: Address; to: Address; amount: string; token: Address; deadline: number; caps: Hex[] }): { body: Mandate; mandateHash: Hex } {
+  const body: Mandate = {
     nonce: toHex(crypto.getRandomValues(new Uint8Array(32))),
     signer: { profileId: eip712EoaSigner.profileIdHash, payload: encodeAbiParameters([{ type: 'address' }], [getAddress(p.payer)]) },
     recipient: { kind: 0, payload: encodeAbiParameters([{ type: 'address' }], [getAddress(p.to)]) },
@@ -145,7 +145,7 @@ function buildPaymentExecution(deps: McpDeps, p: { payer: Address; to: Address; 
     deadline: p.deadline,
     requiredCapabilitiesHash: requiredCapabilitiesHash(p.caps),
   };
-  return { body, executionHash: computeMandateHash(chainDomain(deps.chain), body) };
+  return { body, mandateHash: computeMandateHash(chainDomain(deps.chain), body) };
 }
 
 /** HTTP to the Coordinator with the (optional) write API key. NOT a signing key. */
@@ -183,7 +183,7 @@ const TOOLS = [
       'Run the protocol verifier over a received (mandate, receipt[, attestations]) — the pure HSP decision: ACCEPT iff requiredCapabilities ⊆ satisfiedCapabilities. Does NOT trust a Coordinator; pins the adapter signing address. Returns the AcceptDecision { ok, outcomeClass, errorCode } + a ship flag.',
     inputSchema: A(
       {
-        mandate: { type: 'object', description: 'the SignedExecution JSON' },
+        mandate: { type: 'object', description: 'the SignedMandate JSON' },
         receipt: { type: 'object', description: 'the Receipt JSON' },
         attestations: { type: 'array', description: 'optional Attestation[] JSON' },
         adapterAddress: S('optional override of the pinned adapter signing address (0x…)'),
@@ -197,7 +197,7 @@ const TOOLS = [
       'Same decision as hsp_verify, but NARRATED for a human/agent: ship?, the outcomeClass → recommended action, the error-code meaning, the capabilities the mandate REQUIRES vs the attestations PROVIDED, and the trust boundary (what you are trusting, and whether the binding is cryptographic or operator-attested).',
     inputSchema: A(
       {
-        mandate: { type: 'object', description: 'the SignedExecution JSON' },
+        mandate: { type: 'object', description: 'the SignedMandate JSON' },
         receipt: { type: 'object', description: 'the Receipt JSON' },
         attestations: { type: 'array', description: 'optional Attestation[] JSON' },
         adapterAddress: S('optional override of the pinned adapter signing address'),
@@ -211,7 +211,7 @@ const TOOLS = [
       'Decode an HSP wire object (mandate / receipt / attestation) into plain, labelled fields — amount, recipient, token, deadline, required capabilities (with meanings), the decoded adapter proof, settledAt, and who signed what. Read-only; no verification.',
     inputSchema: A(
       {
-        object: { type: 'object', description: 'a SignedExecution, Receipt, or Attestation JSON' },
+        object: { type: 'object', description: 'a SignedMandate, Receipt, or Attestation JSON' },
         kind: S("optional hint: 'mandate' | 'receipt' | 'attestation' (auto-detected otherwise)"),
       },
       ['object'],
@@ -257,7 +257,7 @@ const TOOLS = [
       'Pre-flight: does a (proposed) mandate satisfy a given §7.7 MandateRequirements? Checks the mandate covers the deployment’s policyRequiredCapabilities and targets a supported domain/chain. Returns ok + what is missing — call this BEFORE paying.',
     inputSchema: A(
       {
-        mandate: { type: 'object', description: 'the SignedExecution (or its body) JSON' },
+        mandate: { type: 'object', description: 'the SignedMandate (or its body) JSON' },
         requirements: { type: 'object', description: 'a MandateRequirements JSON (from hsp_build_requirements or a deployment’s GET /requirements)' },
       },
       ['mandate', 'requirements'],
@@ -266,7 +266,7 @@ const TOOLS = [
   {
     name: 'hsp_build_grant',
     description:
-      'Construct an UNSIGNED DelegationGrant + its grantHash (delegated payments, §2.1.1): a Principal smart account (erc1271) authorizing an Agent EOA to sign PaymentExecutions on its behalf. Signing is EXTERNAL (the Principal OWNER signs grantHash, e.g. via @hsp/sdk signGrant) — this tool never signs. Then build a delegated mandate with grantRef=grantHash (signer=the Agent) and submit it with the SignedDelegationGrant.',
+      'Construct an UNSIGNED DelegationGrant + its grantHash (delegated payments, §2.1.1): a Principal smart account (erc1271) authorizing an Agent EOA to sign Mandates on its behalf. Signing is EXTERNAL (the Principal OWNER signs grantHash, e.g. via @hsp/sdk signGrant) — this tool never signs. Then build a delegated mandate with grantRef=grantHash (signer=the Agent) and submit it with the SignedDelegationGrant.',
     inputSchema: A(
       {
         account: S('the Principal smart-account address (erc1271) whose funds move (0x…)'),
@@ -281,7 +281,7 @@ const TOOLS = [
   {
     name: 'hsp_build_mandate',
     description:
-      'Construct an UNSIGNED PaymentExecution + its executionHash for a payment intent (recipient, amount, token, deadline, capabilities). Signing is EXTERNAL (the payer signs the hash with their key, e.g. via @hsp/sdk) — this tool never signs and never moves money. For a DELEGATED payment pass grantRef (from hsp_build_grant) and set signer = the Agent.',
+      'Construct an UNSIGNED Mandate + its mandateHash for a payment intent (recipient, amount, token, deadline, capabilities). Signing is EXTERNAL (the payer signs the hash with their key, e.g. via @hsp/sdk) — this tool never signs and never moves money. For a DELEGATED payment pass grantRef (from hsp_build_grant) and set signer = the Agent.',
     inputSchema: A(
       {
         to: S('recipient EVM address (0x…)'),
@@ -358,7 +358,7 @@ export function buildServer(deps: McpDeps): Server {
         case 'hsp_verify': {
           const adapterAddress = pinned(args.adapterAddress);
           const decision = await buildVerifier(deps, adapterAddress).verify(
-            args.mandate as SignedExecution,
+            args.mandate as SignedMandate,
             args.receipt as Receipt,
             (args.attestations as Attestation[] | undefined) ?? [],
           );
@@ -367,7 +367,7 @@ export function buildServer(deps: McpDeps): Server {
 
         case 'hsp_explain': {
           const adapterAddress = pinned(args.adapterAddress);
-          const mandate = args.mandate as SignedExecution;
+          const mandate = args.mandate as SignedMandate;
           const receipt = args.receipt as Receipt;
           const attestations = (args.attestations as Attestation[] | undefined) ?? [];
           const decision = await buildVerifier(deps, adapterAddress).verify(mandate, receipt, attestations);
@@ -386,7 +386,7 @@ export function buildServer(deps: McpDeps): Server {
           const o = args.object as Record<string, unknown>;
           const kind = (args.kind as string | undefined) ?? (o.body ? 'mandate' : o.adapterProof ? 'receipt' : o.claims ? 'attestation' : 'unknown');
           if (kind === 'mandate') {
-            const m = o as unknown as SignedExecution;
+            const m = o as unknown as SignedMandate;
             return text({
               kind: 'mandate (payer-signed intent)',
               signer: m.body.signer,
@@ -403,7 +403,7 @@ export function buildServer(deps: McpDeps): Server {
             const r = o as unknown as Receipt;
             return text({
               kind: 'receipt (adapter-operator attestation)',
-              executionHash: r.executionHash,
+              mandateHash: r.mandateHash,
               adapterId: r.adapterId,
               proofSchemaId: r.proofSchemaId,
               outcome: r.outcome,
@@ -469,7 +469,7 @@ export function buildServer(deps: McpDeps): Server {
 
         case 'hsp_check_requirements': {
           const req = args.requirements as MandateRequirements;
-          const m = args.mandate as SignedExecution;
+          const m = args.mandate as SignedMandate;
           const have = new Set((m.requiredCapabilities ?? []).map((x) => x.toLowerCase()));
           const missing = (req.policyRequiredCapabilities ?? []).filter((id) => !have.has(id.toLowerCase()));
           const chainOk = req.domain.chainIds.includes(Number(m.body.chainId));
@@ -505,7 +505,7 @@ export function buildServer(deps: McpDeps): Server {
           const token = (args.token as Address | undefined) ?? deps.chain.stablecoin.address;
           const deadline = (args.deadline as number | undefined) ?? Math.floor(Date.now() / 1000) + 3600;
           const caps = (args.capabilities as Hex[] | undefined) ?? [];
-          const body: PaymentExecution = {
+          const body: Mandate = {
             nonce: toHex(keccak256(toHex(`${args.signer}:${args.to}:${args.amount}:${deadline}`))).slice(0, 66) as Hex,
             signer: { profileId: eip712EoaSigner.profileIdHash, payload: encodeAbiParameters([{ type: 'address' }], [getAddress(String(args.signer))]) },
             ...(args.grantRef ? { grantRef: String(args.grantRef) as Hex } : {}),
@@ -519,9 +519,9 @@ export function buildServer(deps: McpDeps): Server {
           const hash = computeMandateHash(chainDomain(deps.chain), body);
           return text({
             mandateBody: body,
-            executionHash: hash,
+            mandateHash: hash,
             requiredCapabilities: labelCaps(caps),
-            next: 'sign executionHash with the payer key (e.g. @hsp/sdk signMandate) — this tool does NOT sign or move money',
+            next: 'sign mandateHash with the payer key (e.g. @hsp/sdk signMandate) — this tool does NOT sign or move money',
           });
         }
 
@@ -532,8 +532,8 @@ export function buildServer(deps: McpDeps): Server {
           const token = args.token ? getAddress(String(args.token)) : deps.chain.stablecoin.address;
           const rail = (args.rail as string) ?? 'evm-transfer';
           const deadline = (args.deadline as number) ?? Math.floor(Date.now() / 1000) + 3600;
-          const { body, executionHash } = buildPaymentExecution(deps, { payer, to, amount: amount.toString(), token, deadline, caps: [] });
-          const mandateSign = { id: 'mandate', method: 'eth_signTypedData_v4', params: { address: payer, typedData: mandateTypedData(chainDomain(deps.chain), body) }, expect: { executionHash } };
+          const { body, mandateHash } = buildMandate(deps, { payer, to, amount: amount.toString(), token, deadline, caps: [] });
+          const mandateSign = { id: 'mandate', method: 'eth_signTypedData_v4', params: { address: payer, typedData: mandateTypedData(chainDomain(deps.chain), body) }, expect: { mandateHash } };
 
           if (rail === 'x402') {
             const facilitatorUrl = String(args.facilitatorUrl ?? '').replace(/\/$/, '');
@@ -559,30 +559,30 @@ export function buildServer(deps: McpDeps): Server {
                 authorization: { from: payer, to, value: amount.toString(), validAfter: '0', validBefore: String(validBefore), nonce: auth.nonce },
               },
             };
-            return text({ paymentId: executionHash, rail: 'x402', mandateBody: body, toSign: [mandateSign, settleSign], next: 'route each toSign[].method to your wallet MCP, then call hsp_submit_payment' });
+            return text({ paymentId: mandateHash, rail: 'x402', mandateBody: body, toSign: [mandateSign, settleSign], next: 'route each toSign[].method to your wallet MCP, then call hsp_submit_payment' });
           }
 
           const data = encodeFunctionData({ abi: ERC20_TRANSFER, functionName: 'transfer', args: [to, amount] });
           const settleSign = { id: 'settlement', method: 'eth_sendTransaction', params: { tx: { from: payer, to: token, data, value: '0x0', chainId: deps.chain.chainId } } };
-          return text({ paymentId: executionHash, rail: 'evm-transfer', mandateBody: body, toSign: [mandateSign, settleSign], next: 'have your wallet MCP sign+broadcast the tx, then call hsp_submit_payment with the mandate signature + the settlement txHash' });
+          return text({ paymentId: mandateHash, rail: 'evm-transfer', mandateBody: body, toSign: [mandateSign, settleSign], next: 'have your wallet MCP sign+broadcast the tx, then call hsp_submit_payment with the mandate signature + the settlement txHash' });
         }
 
         case 'hsp_submit_payment': {
           if (!deps.coordinatorUrl) return text({ error: 'no-coordinator', detail: 'hsp_submit_payment needs HSP_COORDINATOR_URL (+ HSP_API_KEY)' }, true);
           const rail = String(args.rail);
-          const body = args.mandateBody as PaymentExecution;
+          const body = args.mandateBody as Mandate;
           const signed = args.signed as { mandate: Hex; settlement: unknown };
-          const executionHash = computeMandateHash(chainDomain(deps.chain), body);
-          if (String(args.paymentId).toLowerCase() !== executionHash.toLowerCase()) {
+          const mandateHash = computeMandateHash(chainDomain(deps.chain), body);
+          if (String(args.paymentId).toLowerCase() !== mandateHash.toLowerCase()) {
             return text({ error: 'mandate-tampered', detail: 'mandateBody does not reproduce paymentId — refusing' }, true);
           }
           const payer = getAddress(decodeAbiParameters([{ type: 'address' }], body.signer.payload)[0] as Address);
           const sig = normalizeV(signed.mandate);
-          const recovered = await recoverAddress({ hash: executionHash, signature: sig });
+          const recovered = await recoverAddress({ hash: mandateHash, signature: sig });
           if (getAddress(recovered) !== payer) {
             return text({ error: 'bad-mandate-signature', detail: `signature recovers to ${recovered}, expected payer ${payer}` }, true);
           }
-          const mandate: SignedExecution = { body, signerProof: sig, requiredCapabilities: [] };
+          const mandate: SignedMandate = { body, signerProof: sig, requiredCapabilities: [] };
           const reg = await coordHttp(deps, 'POST', '/payments', { chain: deps.chain.name, mandate, attestations: [], ...(args.grant ? { grant: args.grant as SignedDelegationGrant } : {}) });
           if (reg.status !== 200 && reg.status !== 201) return text({ error: 'register-failed', status: reg.status, detail: reg.json }, true);
 
@@ -594,17 +594,17 @@ export function buildServer(deps: McpDeps): Server {
             const settleRes = await fetch(`${s.facilitatorUrl.replace(/\/$/, '')}/settle`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ x402Version: 2, paymentPayload, paymentRequirements: requirements }) });
             const settle = (await settleRes.json()) as { success?: boolean; transaction?: Hex; errorReason?: string };
             if (!settle.success || !settle.transaction) return text({ error: 'x402-settle-failed', detail: settle.errorReason ?? 'unknown' }, true);
-            const obs = await coordHttp(deps, 'POST', `/payments/${executionHash}/x402-observe`, { authorization: s.authorization, signature: s.signature, tokenName: s.tokenName, tokenVersion: s.tokenVersion, txHash: settle.transaction, merchantDomain: s.merchantDomain });
+            const obs = await coordHttp(deps, 'POST', `/payments/${mandateHash}/x402-observe`, { authorization: s.authorization, signature: s.signature, tokenName: s.tokenName, tokenVersion: s.tokenVersion, txHash: settle.transaction, merchantDomain: s.merchantDomain });
             if (obs.status >= 400) return text({ error: 'x402-observe-failed', status: obs.status, detail: obs.json }, true);
           } else {
             const txHash = signed.settlement as Hex;
-            const obs = await coordHttp(deps, 'POST', `/payments/${executionHash}/observe`, { txHash });
+            const obs = await coordHttp(deps, 'POST', `/payments/${mandateHash}/observe`, { txHash });
             if (obs.status >= 400 && obs.status !== 202) return text({ error: 'observe-failed', status: obs.status, detail: obs.json }, true);
           }
 
-          const snap = await coordHttp(deps, 'GET', `/payments/${executionHash}`);
+          const snap = await coordHttp(deps, 'GET', `/payments/${mandateHash}`);
           const j = (snap.json ?? {}) as { status?: string; lastDecision?: { outcomeClass?: string } };
-          return text({ paymentId: executionHash, status: j.status, decision: j.lastDecision, ship: j.lastDecision?.outcomeClass === 'ACCEPT' });
+          return text({ paymentId: mandateHash, status: j.status, decision: j.lastDecision, ship: j.lastDecision?.outcomeClass === 'ACCEPT' });
         }
 
         default:

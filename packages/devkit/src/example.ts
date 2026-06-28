@@ -12,7 +12,7 @@ import {
   EVM_TRANSFER_PROOF_SCHEMA_ID,
   type TransferObservation,
 } from '@hsp/core/adapter/mock-evm-transfer';
-import { runAdapterConformance, makeSignedExecution, defaultCtx, type ConformanceCtx, type HappyCase } from './conformance.js';
+import { runAdapterConformance, makeSignedMandate, defaultCtx, type ConformanceCtx, type HappyCase } from './conformance.js';
 
 function observation(ctx: ConformanceCtx, txTag: string): TransferObservation {
   return {
@@ -27,10 +27,10 @@ function observation(ctx: ConformanceCtx, txTag: string): TransferObservation {
 }
 
 async function happyFor(ctx: ConformanceCtx, txTag: string, nonceTag: string): Promise<HappyCase> {
-  const { mandate, executionHash } = await makeSignedExecution(ctx, { nonce: keccak256(stringToBytes(nonceTag)) });
+  const { mandate, mandateHash } = await makeSignedMandate(ctx, { nonce: keccak256(stringToBytes(nonceTag)) });
   const receipt = await buildAndSignReceipt({
     domain: ctx.domain,
-    executionHash,
+    mandateHash,
     observation: observation(ctx, txTag),
     adapterPrivateKey: ctx.adapterPk,
     settledAt: ctx.evaluationTime - 10,

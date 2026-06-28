@@ -10,7 +10,7 @@
  *   - rebuild the same string from derivations.ts's exported field arrays.
  *
  * Any field add / remove / reorder / retype (the `notBefore` class of drift)
- * changes EXECUTION_TYPEHASH, so the two strings diverge and this fails.
+ * changes MANDATE_TYPEHASH, so the two strings diverge and this fails.
  *
  * Usage:  npm run guard   (also runs as part of `npm run verify`)
  */
@@ -19,7 +19,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  EXECUTION_FIELDS,
+  MANDATE_FIELDS,
   GRANT_FIELDS,
   RECEIPT_PREIMAGE_FIELDS,
   NESTED_TYPES,
@@ -87,7 +87,7 @@ export interface GuardFailure {
 }
 
 const CHECKS = [
-  { name: 'EXECUTION_TYPEHASH', primary: 'PaymentExecution', fields: EXECUTION_FIELDS },
+  { name: 'MANDATE_TYPEHASH', primary: 'Mandate', fields: MANDATE_FIELDS },
   { name: 'GRANT_TYPEHASH', primary: 'DelegationGrant', fields: GRANT_FIELDS },
   { name: 'RECEIPT_PREIMAGE_TYPEHASH', primary: 'ReceiptPreimage', fields: RECEIPT_PREIMAGE_FIELDS },
 ] as const;

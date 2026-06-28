@@ -14,7 +14,7 @@
  */
 
 import type { Address, Hex } from 'viem';
-import type { PartyRef, PaymentExecution, Receipt, ParsedCapability } from '../core/index.js';
+import type { PartyRef, Mandate, Receipt, ParsedCapability } from '../core/index.js';
 
 // =============================================================================
 // §4.3.3 Verifier output
@@ -63,10 +63,10 @@ export interface SignerProfile {
   // is the account address, NOT the agent/owner. §5.2 step 4 binds the settlement sender
   // to accountOf(principalSubject).
   accountOf(payload: Hex): PartyRef;
-  // verify a proof against the bound HSP typed-data digest — executionHash for a
-  // PaymentExecution signer, grantHash for a DelegationGrant principal (§5.1 step 4c-i).
+  // verify a proof against the bound HSP typed-data digest — mandateHash for a
+  // Mandate signer, grantHash for a DelegationGrant principal (§5.1 step 4c-i).
   // `body` is the execution context (unused by eoa/erc1271 profiles; reserved).
-  verify(payload: Hex, proof: Hex, digest: Hex, body: PaymentExecution): Promise<SignerDecision>;
+  verify(payload: Hex, proof: Hex, digest: Hex, body: Mandate): Promise<SignerDecision>;
   isStateStale?(signerStateHash: Hex, stateAnchor: SignerStateAnchor, now: number): boolean;
 }
 
@@ -94,8 +94,8 @@ export interface AdapterTrustRoots {
 
 export interface VerifyContext {
   proofBytes: Hex; // receipt.adapterProof
-  body: PaymentExecution;
-  executionHash: Hex;
+  body: Mandate;
+  mandateHash: Hex;
   signerSubject: PartyRef; // SignerDecision.resolvedSubject — the SIGNER (Agent when delegated)
   payerAccount: PartyRef; // §4.1 accountOf(principal) — the on-chain account whose Transfer.from binds
   //   (the Agent/signer for self-pay, the smart account when delegated). §5.2 step-4 sender binding
@@ -117,7 +117,7 @@ export interface VerifyOutcome {
    * Canonical identity of the settlement-native observation, derived
    * deterministically from the (signed) adapterProof. MUST be present when
    * ok=true for schemas whose settlement artifact is NOT cryptographically
-   * bound to executionHash (observation-based adapters); MAY be omitted when it
+   * bound to mandateHash (observation-based adapters); MAY be omitted when it
    * is (e.g. x402). Consumed by §5.2 step 7's observation-consumption index.
    */
   observationId?: Hex;

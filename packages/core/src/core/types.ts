@@ -12,7 +12,7 @@ import type {
   DomainInput,
   SignerInput,
   RecipientInput,
-  PaymentExecutionInput,
+  MandateInput,
   DelegationGrantInput,
   ReceiptInput,
 } from '../derivations.js';
@@ -33,13 +33,13 @@ export type Recipient = RecipientInput;
 export const RecipientKind = { ADDRESS: 0, COMMITMENT: 1 } as const;
 export type RecipientKindValue = (typeof RecipientKind)[keyof typeof RecipientKind];
 
-/** §2.1.2 PaymentExecution — the 8 EIP-712-signed fields. */
-export type PaymentExecution = PaymentExecutionInput;
+/** §2.1.2 Mandate — the 8 EIP-712-signed fields. */
+export type Mandate = MandateInput;
 
-/** §2.1.1 SignedExecution envelope — only `body` is EIP-712 signed. */
-export interface SignedExecution {
-  body: PaymentExecution;
-  signerProof: Hex; // SignerProfile-defined; verified against executionHash (§5.1 step 4)
+/** §2.1.1 SignedMandate envelope — only `body` is EIP-712 signed. */
+export interface SignedMandate {
+  body: Mandate;
+  signerProof: Hex; // SignerProfile-defined; verified against mandateHash (§5.1 step 4)
   requiredCapabilities: Hex[]; // canonical cap-id set; wire order/dupes tolerated (§3.1.3 / §5.1 step 3)
 }
 
@@ -98,7 +98,7 @@ export interface Attestation {
   issuer: PartyRef; // canonical id via canonicalRefId
   issuerKeyId: Hex; // signing-key fingerprint (issuer MAY rotate keys)
   subjectBinding: PartyRef; // attested subject; checked == roleAssignment[role] (§5.2 step 5, CR2c)
-  contextBinding: Hex; // bytes32(0) | executionHash | receiptHash (§2.3.3)
+  contextBinding: Hex; // bytes32(0) | mandateHash | receiptHash (§2.3.3)
   issuedAt: number; // Unix seconds
   expiresAt: number; // Unix seconds; 0 ⇔ no expiry
   issuerSignature: Hex; // over all fields above (§2.3.1)

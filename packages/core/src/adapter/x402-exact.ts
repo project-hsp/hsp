@@ -11,7 +11,7 @@
  * even an untrusted facilitator cannot make a payment satisfy caps it didn't —
  * it cannot forge the payer's authorization or mandate.
  *
- *   payer A  signs:  HSP mandate (eip712-eoa over executionHash)
+ *   payer A  signs:  HSP mandate (eip712-eoa over mandateHash)
  *                    EIP-3009 TransferWithAuthorization (token domain)  ── same EOA A
  *   facilitator      relays transferWithAuthorization, signs the Receipt (adapterSignature)
  *
@@ -213,7 +213,7 @@ export const x402ExactSchema: AdapterProofSchema = {
 
 export interface BuildX402ExactReceiptArgs {
   domain: DomainInput;
-  executionHash: Hex;
+  mandateHash: Hex;
   proof: X402ExactProof;
   adapterPrivateKey: Hex; // the facilitator / x402 server key (trusted adapter key)
   adapterInstanceKey: Hex; // keccak256(merchantDomain)
@@ -225,7 +225,7 @@ export interface BuildX402ExactReceiptArgs {
 /** Facilitator side: assemble + sign the v2 Receipt. */
 export async function buildAndSignX402ExactReceipt(args: BuildX402ExactReceiptArgs): Promise<Receipt> {
   const core: ReceiptInput = {
-    executionHash: args.executionHash,
+    mandateHash: args.mandateHash,
     adapterId: X402_ADAPTER_ID,
     adapterInstanceKey: args.adapterInstanceKey ?? ZERO32,
     seq: args.seq ?? 0,

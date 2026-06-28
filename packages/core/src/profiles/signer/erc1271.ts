@@ -3,7 +3,7 @@
  *
  * payload = abi.encode(address smartAccount, uint256 chainId); proof = account-defined
  * bytes verified ON-CHAIN via `IERC1271.isValidSignature(digest, proof)`. The digest is
- * the bound HSP typed-data hash — executionHash for a PaymentExecution signer, grantHash
+ * the bound HSP typed-data hash — mandateHash for a Mandate signer, grantHash
  * for a DelegationGrant principal (§5.1 step 4c-i).
  *
  * SP7 state-dependent: validation reads live account state (ownership / module config),
@@ -22,7 +22,7 @@ import {
   type Hex,
   type Address,
 } from 'viem';
-import type { PartyRef, PaymentExecution } from '../../core/index.js';
+import type { PartyRef, Mandate } from '../../core/index.js';
 import type { SignerProfile, SignerDecision } from '../../verifier/contracts.js';
 import { evmAddressPartyRef } from './eip712-eoa.js';
 
@@ -104,7 +104,7 @@ export function createErc1271Signer(
       return evmAddressPartyRef(account);
     },
 
-    async verify(payload: Hex, proof: Hex, digest: Hex, _body: PaymentExecution): Promise<SignerDecision> {
+    async verify(payload: Hex, proof: Hex, digest: Hex, _body: Mandate): Promise<SignerDecision> {
       let account: Address;
       let chainId: bigint;
       try {

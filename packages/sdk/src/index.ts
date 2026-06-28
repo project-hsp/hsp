@@ -18,7 +18,7 @@ export {
   type CompliancePolicyOpts,
 } from '@hsp/core/policy/compliance';
 export {
-  signPaymentExecution,
+  signMandateBody,
   signGrant,
   signerAddress,
   mandateTypedData,

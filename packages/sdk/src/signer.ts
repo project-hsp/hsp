@@ -28,13 +28,13 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
-  executionHash as computeMandateHash,
+  mandateHash as computeMandateHash,
   grantHash as computeGrantHash,
-  EXECUTION_FIELDS,
+  MANDATE_FIELDS,
   GRANT_FIELDS,
   NESTED_TYPES,
   type DomainInput,
-  type PaymentExecution,
+  type Mandate,
   type DelegationGrantInput,
   type SignedDelegationGrant,
 } from '@hsp/core';
@@ -56,12 +56,12 @@ export function signerAddress(s: HSPSigner): Address {
   }
 }
 
-/** EIP-712 typed data whose digest equals core executionHash(domain, body). */
-// NONE sentinel for the optional PaymentExecution refs — MUST match core bodyMessage
-// (derivations.ts) so the SDK's typed-data digest equals core executionHash().
+/** EIP-712 typed data whose digest equals core mandateHash(domain, body). */
+// NONE sentinel for the optional Mandate refs — MUST match core bodyMessage
+// (derivations.ts) so the SDK's typed-data digest equals core mandateHash().
 const NONE32 = `0x${'00'.repeat(32)}` as Hex;
 
-export function mandateTypedData(domain: DomainInput, body: PaymentExecution) {
+export function mandateTypedData(domain: DomainInput, body: Mandate) {
   return {
     domain: {
       name: domain.name,
@@ -69,8 +69,8 @@ export function mandateTypedData(domain: DomainInput, body: PaymentExecution) {
       chainId: Number(domain.chainId),
       verifyingContract: domain.verifyingContract as Address,
     },
-    types: { PaymentExecution: [...EXECUTION_FIELDS], ...NESTED_TYPES },
-    primaryType: 'PaymentExecution' as const,
+    types: { Mandate: [...MANDATE_FIELDS], ...NESTED_TYPES },
+    primaryType: 'Mandate' as const,
     // Default the three optional refs to NONE so the 11-field message is complete
     // for self-pay (grantRef/requirementRef/settlementBinding absent) — viem validates
     // every typed-data field, and this must mirror core's bodyMessage defaulting.
@@ -92,30 +92,30 @@ function normalizeV(sig: Hex): Hex {
   return sig;
 }
 
-export async function signPaymentExecution(
+export async function signMandateBody(
   signer: HSPSigner,
   domain: DomainInput,
-  body: PaymentExecution,
-): Promise<{ executionHash: Hex; signerProof: Hex }> {
+  body: Mandate,
+): Promise<{ mandateHash: Hex; signerProof: Hex }> {
   const mh = computeMandateHash(domain, body);
   switch (signer.kind) {
     case 'privateKey':
-      return { executionHash: mh, signerProof: await signMandateHash(signer.privateKey, mh) };
+      return { mandateHash: mh, signerProof: await signMandateHash(signer.privateKey, mh) };
     case 'viemAccount': {
       if (!signer.account.sign) throw new Error('viemAccount must be a local account exposing sign({ hash })');
-      return { executionHash: mh, signerProof: await signer.account.sign({ hash: mh }) };
+      return { mandateHash: mh, signerProof: await signer.account.sign({ hash: mh }) };
     }
     case 'eip1193': {
       const td = mandateTypedData(domain, body);
       const digest = hashTypedData(td as Parameters<typeof hashTypedData>[0]);
       if (digest.toLowerCase() !== mh.toLowerCase()) {
-        throw new Error('typed-data digest does not reproduce core executionHash — refusing to request a wallet signature');
+        throw new Error('typed-data digest does not reproduce core mandateHash — refusing to request a wallet signature');
       }
       const raw = (await signer.provider.request({
         method: 'eth_signTypedData_v4',
         params: [signer.address, JSON.stringify(td)],
       })) as Hex;
-      return { executionHash: mh, signerProof: normalizeV(raw) };
+      return { mandateHash: mh, signerProof: normalizeV(raw) };
     }
   }
 }

@@ -8,13 +8,13 @@ requiring the full (private) normative spec to live in this repo.
 Keep this in sync with HSP.md whenever a wire-format change lands — see the
 repo-split plan, "协议修改 SOP" (B-class / wire change).
 
-Delegation refactor (v-next): `PaymentExecution` is 11 fields (v0 `MandateBody`
+Delegation refactor (v-next): `Mandate` is 11 fields (v0 `MandateBody`
 was 8; `grantRef`/`requirementRef`/`settlementBinding` added), `ReceiptPreimage`
-renames `mandateHash` → `executionHash`, and `GRANT_TYPEHASH` (DelegationGrant,
+renames `mandateHash` → `mandateHash`, and `GRANT_TYPEHASH` (DelegationGrant,
 §2.4.1a) is added for delegated payments — the Principal signs `grantHash`.
 
-EXECUTION_TYPEHASH = keccak256(
-  "PaymentExecution("
+MANDATE_TYPEHASH = keccak256(
+  "Mandate("
     "bytes32 nonce,"
     "Signer signer,"
     "bytes32 grantRef,"
@@ -47,7 +47,7 @@ GRANT_TYPEHASH = keccak256(
 
 RECEIPT_PREIMAGE_TYPEHASH = keccak256(
   "ReceiptPreimage("
-    "bytes32 executionHash,"
+    "bytes32 mandateHash,"
     "bytes32 adapterId,"
     "bytes32 adapterInstanceKey,"
     "uint64 seq,"

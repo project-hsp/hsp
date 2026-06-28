@@ -6,8 +6,8 @@
  * actors (profiles / adapter / attestation / verifier) import from here.
  */
 
-// Typed wire-object model (§2): Domain, Signer, Recipient, PaymentExecution,
-// SignedExecution, Outcome, Receipt, PartyRef, Attestation,
+// Typed wire-object model (§2): Domain, Signer, Recipient, Mandate,
+// SignedMandate, Outcome, Receipt, PartyRef, Attestation,
 // canonicalRefId, partyRefEqual, RecipientKind.
 export * from './types.js';
 
@@ -20,18 +20,18 @@ export {
   capabilityId,
   canonicalParamsEncoding,
   requiredCapabilitiesHash,
-  executionHash,
+  mandateHash,
   grantHash,
   receiptHash,
   preprocessInput,
-  EXECUTION_FIELDS,
+  MANDATE_FIELDS,
   GRANT_FIELDS,
   RECEIPT_PREIMAGE_FIELDS,
   NESTED_TYPES,
 } from '../derivations.js';
 
 // Hashing-input shapes (the *Input names ../derivations.ts exports; ./types.ts
-// aliases the wire-facing ones to Domain/Signer/Recipient/PaymentExecution/Receipt).
+// aliases the wire-facing ones to Domain/Signer/Recipient/Mandate/Receipt).
 export type {
   CapabilityIdInput,
   CanonicalParam,
@@ -39,7 +39,7 @@ export type {
   DomainInput,
   SignerInput,
   RecipientInput,
-  PaymentExecutionInput,
+  MandateInput,
   DelegationGrantInput,
   ReceiptInput,
 } from '../derivations.js';

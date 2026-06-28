@@ -13,14 +13,14 @@
 import { encodeAbiParameters, keccak256, stringToBytes, getAddress, type Hex, type Address } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
-  executionHash as computeMandateHash,
+  mandateHash as computeMandateHash,
   requiredCapabilitiesHash,
   makeCap,
   familyCapId,
   buildCapabilityRegistry,
   Roles,
-  type SignedExecution,
-  type PaymentExecution,
+  type SignedMandate,
+  type Mandate,
   type DomainInput,
   type ParsedCapability,
   type Attestation,
@@ -64,9 +64,9 @@ const kycBasic = makeCap('attests:kyc:v1', { level: 'basic' }, Roles.payer);
 const sanctions = makeCap('attests:sanctions:v1', {}, Roles.payer);
 const risk50 = makeCap('attests:risk-score:v1', { maxScore: '50' }, Roles.payer);
 
-async function buildMandate(reqCaps: ParsedCapability[], nonceTag: string): Promise<{ mandate: SignedExecution; executionHash: Hex }> {
+async function buildMandate(reqCaps: ParsedCapability[], nonceTag: string): Promise<{ mandate: SignedMandate; mandateHash: Hex }> {
   const ids = reqCaps.map((c) => c.id);
-  const body: PaymentExecution = {
+  const body: Mandate = {
     nonce: keccak256(stringToBytes(`m2-${nonceTag}`)),
     signer: { profileId: eip712EoaSigner.profileIdHash, payload: encodeAbiParameters([{ type: 'address' }], [payer.address]) },
     recipient: { kind: 0, payload: encodeAbiParameters([{ type: 'address' }], [RECIPIENT]) },
@@ -78,7 +78,7 @@ async function buildMandate(reqCaps: ParsedCapability[], nonceTag: string): Prom
   };
   const mh = computeMandateHash(domain, body);
   const signerProof = await signMandateHash(PAYER_PK, mh);
-  return { mandate: { body, signerProof, requiredCapabilities: ids }, executionHash: mh };
+  return { mandate: { body, signerProof, requiredCapabilities: ids }, mandateHash: mh };
 }
 
 function observation(): TransferObservation {
@@ -135,8 +135,8 @@ async function runCase(
   want: { ok: boolean; outcomeClass?: string; errorCode?: string },
   policyOver: Partial<VerificationPolicy> = {},
 ): Promise<void> {
-  const { mandate, executionHash } = await buildMandate(reqCaps, label.replace(/\s+/g, '-'));
-  const receipt = await buildAndSignReceipt({ domain, executionHash, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
+  const { mandate, mandateHash } = await buildMandate(reqCaps, label.replace(/\s+/g, '-'));
+  const receipt = await buildAndSignReceipt({ domain, mandateHash, observation: observation(), adapterPrivateKey: ADAPTER_PK, settledAt: EVAL_TIME - 10 });
   check(label, await verify(mandate, receipt, attestations, compliancePolicy(reqCaps, policyOver), new SeqIndex()), want);
 }
 
