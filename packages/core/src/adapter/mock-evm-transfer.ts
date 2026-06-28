@@ -124,7 +124,7 @@ export const evmTransferSchema: AdapterProofSchema = {
 
 export interface BuildReceiptArgs {
   domain: DomainInput;
-  mandateHash: Hex;
+  executionHash: Hex;
   observation: TransferObservation;
   adapterPrivateKey: Hex;
   adapterInstanceKey?: Hex;
@@ -136,7 +136,7 @@ export interface BuildReceiptArgs {
 /** Adapter Operator side: assemble + sign a Receipt (adapterSignature over receiptHash). */
 export async function buildAndSignReceipt(args: BuildReceiptArgs): Promise<Receipt> {
   const core: ReceiptInput = {
-    mandateHash: args.mandateHash,
+    executionHash: args.executionHash,
     adapterId: EVM_TRANSFER_ADAPTER_ID,
     adapterInstanceKey: args.adapterInstanceKey ?? ZERO32,
     seq: args.seq ?? 0,

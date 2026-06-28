@@ -1,6 +1,6 @@
 /**
  * Prior-receipt index — the stateful-admission input of §4.3.4 CR5 / §5.2 step 7.
- * Keyed by (adapterId, adapterInstanceKey, mandateHash). NOT part of the stateless
+ * Keyed by (adapterId, adapterInstanceKey, executionHash). NOT part of the stateless
  * core and MUST NOT be folded into VerificationPolicy (§7.2). In-memory for M1.
  */
 
@@ -25,13 +25,13 @@ export interface PriorState {
 export class SeqIndex {
   private readonly m = new Map<string, Emission[]>();
 
-  private key(adapterId: Hex, instanceKey: Hex, mandateHash: Hex): string {
-    return `${adapterId.toLowerCase()}:${instanceKey.toLowerCase()}:${mandateHash.toLowerCase()}`;
+  private key(adapterId: Hex, instanceKey: Hex, executionHash: Hex): string {
+    return `${adapterId.toLowerCase()}:${instanceKey.toLowerCase()}:${executionHash.toLowerCase()}`;
   }
 
   /** Summarize prior emissions for the 4-tuple (per §5.2 step 7 needs). */
-  state(adapterId: Hex, instanceKey: Hex, mandateHash: Hex): PriorState {
-    const es = this.m.get(this.key(adapterId, instanceKey, mandateHash)) ?? [];
+  state(adapterId: Hex, instanceKey: Hex, executionHash: Hex): PriorState {
+    const es = this.m.get(this.key(adapterId, instanceKey, executionHash)) ?? [];
     if (es.length === 0) return { seen: false, maxSeq: -1, disputed: false };
     let maxSeq = -1;
     let disputed = false;
@@ -48,15 +48,15 @@ export class SeqIndex {
     return { seen: true, maxSeq, disputed, settledSeq, settledAt };
   }
 
-  /** S4 (§2.2.3): same (adapterId, instanceKey, mandateHash, seq) with a different content hash. */
-  isEquivocation(adapterId: Hex, instanceKey: Hex, mandateHash: Hex, seq: number, receiptHash: Hex): boolean {
-    const es = this.m.get(this.key(adapterId, instanceKey, mandateHash)) ?? [];
+  /** S4 (§2.2.3): same (adapterId, instanceKey, executionHash, seq) with a different content hash. */
+  isEquivocation(adapterId: Hex, instanceKey: Hex, executionHash: Hex, seq: number, receiptHash: Hex): boolean {
+    const es = this.m.get(this.key(adapterId, instanceKey, executionHash)) ?? [];
     return es.some((e) => e.seq === seq && e.receiptHash.toLowerCase() !== receiptHash.toLowerCase());
   }
 
   /** Record an accepted emission (called only after §5.2 steps 1–7 pass). */
-  record(adapterId: Hex, instanceKey: Hex, mandateHash: Hex, e: Emission): void {
-    const k = this.key(adapterId, instanceKey, mandateHash);
+  record(adapterId: Hex, instanceKey: Hex, executionHash: Hex, e: Emission): void {
+    const k = this.key(adapterId, instanceKey, executionHash);
     const arr = this.m.get(k) ?? [];
     arr.push(e);
     this.m.set(k, arr);
@@ -78,13 +78,13 @@ export class ObservationIndex {
     return `${adapterId.toLowerCase()}:${observationId.toLowerCase()}`;
   }
 
-  /** The mandateHash that consumed this observation, if any. */
+  /** The executionHash that consumed this observation, if any. */
   owner(adapterId: Hex, observationId: Hex): Hex | undefined {
     return this.m.get(this.key(adapterId, observationId));
   }
 
   /** Record consumption (called only after §5.2 step 7 passes in full). */
-  record(adapterId: Hex, observationId: Hex, mandateHash: Hex): void {
-    this.m.set(this.key(adapterId, observationId), mandateHash.toLowerCase() as Hex);
+  record(adapterId: Hex, observationId: Hex, executionHash: Hex): void {
+    this.m.set(this.key(adapterId, observationId), executionHash.toLowerCase() as Hex);
   }
 }

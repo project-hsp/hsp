@@ -16,7 +16,7 @@
  *  [D4] EMIT observationId for observation-based settlement (a hash of your
  *       settlement-native identity, e.g. (chainId, token, txHash)) so one
  *       settlement can never satisfy two mandates. Omit ONLY if your artifact
- *       is cryptographically bound to mandateHash (x402-style).
+ *       is cryptographically bound to executionHash (x402-style).
  */
 
 import {
@@ -119,7 +119,7 @@ export const myAdapterSchema: AdapterProofSchema = {
 
 export interface BuildMyReceiptArgs {
   domain: DomainInput;
-  mandateHash: Hex;
+  executionHash: Hex;
   observation: MyObservation;
   adapterPrivateKey: Hex;
   adapterInstanceKey?: Hex;
@@ -131,7 +131,7 @@ export interface BuildMyReceiptArgs {
 /** Operator side: assemble + sign the Receipt over receiptHash (§2.4.2). */
 export async function buildAndSignMyReceipt(args: BuildMyReceiptArgs): Promise<Receipt> {
   const core: ReceiptInput = {
-    mandateHash: args.mandateHash,
+    executionHash: args.executionHash,
     adapterId: MY_ADAPTER_ID,
     adapterInstanceKey: args.adapterInstanceKey ?? ZERO32,
     seq: args.seq ?? 0,

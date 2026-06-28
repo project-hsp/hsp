@@ -1,8 +1,8 @@
 /**
  * SignerProfile `eip712-eoa.v1` — HSP.md §4.1.6 reserved profile (worked example).
  *
- * payload = abi.encode(address); proof = EIP-712 secp256k1 sig over mandateHash
- * (mandateHash is the final typed-data digest, signed directly). PartyRef.scheme
+ * payload = abi.encode(address); proof = EIP-712 secp256k1 sig over executionHash
+ * (executionHash is the final typed-data digest, signed directly). PartyRef.scheme
  * = "evm-address". No deployment trust anchors — purely cryptographic.
  *
  * §4.1.6 signature strictness: proof is exactly 65 bytes (r ‖ s ‖ v), v ∈ {27, 28},
@@ -21,7 +21,7 @@ import {
   type Address,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import type { PartyRef, MandateBody } from '../../core/index.js';
+import type { PartyRef, PaymentExecution } from '../../core/index.js';
 import type { SignerProfile, SignerDecision } from '../../verifier/contracts.js';
 
 const PROFILE_ID = 'eip712-eoa.v1';
@@ -52,7 +52,7 @@ export const eip712EoaSigner: SignerProfile = {
     return evmAddressPartyRef(address);
   },
 
-  async verify(payload: Hex, proof: Hex, mandateHash: Hex, _body: MandateBody): Promise<SignerDecision> {
+  async verify(payload: Hex, proof: Hex, executionHash: Hex, _body: PaymentExecution): Promise<SignerDecision> {
     let address: Address;
     try {
       address = decodeAbiParameters([{ type: 'address' }], payload)[0];
@@ -70,7 +70,7 @@ export const eip712EoaSigner: SignerProfile = {
     }
     let recovered: Address;
     try {
-      recovered = await recoverAddress({ hash: mandateHash, signature: proof });
+      recovered = await recoverAddress({ hash: executionHash, signature: proof });
     } catch {
       return { granted: false, errorCode: 'HSP-MAND-SIGNER' };
     }
@@ -82,7 +82,7 @@ export const eip712EoaSigner: SignerProfile = {
   },
 };
 
-/** Payer-side helper: produce the §4.1.6 signerProof by signing mandateHash with an EOA key. */
-export async function signMandateHash(privateKey: Hex, mandateHash: Hex): Promise<Hex> {
-  return privateKeyToAccount(privateKey).sign({ hash: mandateHash });
+/** Payer-side helper: produce the §4.1.6 signerProof by signing executionHash with an EOA key. */
+export async function signMandateHash(privateKey: Hex, executionHash: Hex): Promise<Hex> {
+  return privateKeyToAccount(privateKey).sign({ hash: executionHash });
 }

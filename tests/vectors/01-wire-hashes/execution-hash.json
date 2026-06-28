@@ -1,12 +1,13 @@
 {
   "spec_section": "HSP.md §2.4.1",
-  "derivation": "mandateHash",
+  "derivation": "executionHash",
+  "_note": "Re-cut for the delegation refactor: PaymentExecution is 11 fields (v0 MandateBody was 8; grantRef, requirementRef, settlementBinding added). EXECUTION_TYPEHASH = 0xa337c960aaf8125b74d63416bb77b44b533474b84070afd3d86b3151574b4a00 (see typehashes.md). For self-pay public payments the three new fields are bytes32(0) (NONE).",
   "vectors": [
     {
       "id": "public-payment-no-caps",
-      "description": "Trivial public payment over the 8-field MandateBody.",
+      "description": "Trivial public self-pay payment over the 11-field PaymentExecution (grantRef/requirementRef/settlementBinding = NONE).",
       "spec_refs": [
-        "HSP.md §2.4.1 MANDATE_BODY_TYPEHASH",
+        "HSP.md §2.4.1 EXECUTION_TYPEHASH",
         "HSP.md §2.4.3 nested type ordering",
         "HSP-examples.md §1 (Trivial Public Payment)"
       ],
@@ -23,6 +24,8 @@
             "profileId": "0x86d11d3a72d8e2d7d8c9bb9b9c2d8e9d7e6c5b4a39281706050403020100ffee",
             "payload": "0x000000000000000000000000c0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ff"
           },
+          "grantRef": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "requirementRef": "0x0000000000000000000000000000000000000000000000000000000000000000",
           "recipient": {
             "kind": 0,
             "payload": "0x000000000000000000000000beefbeefbeefbeefbeefbeefbeefbeefbeefbeef"
@@ -31,16 +34,17 @@
           "amount": "9990000",
           "chainId": 8453,
           "deadline": 1714000600,
+          "settlementBinding": "0x0000000000000000000000000000000000000000000000000000000000000000",
           "requiredCapabilitiesHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
       "expected_output": {
-        "hash": "0x153ee68c5fae98b83b99969f3a3ed38b1b392a14aa76caa419d64e25a1623575"
+        "hash": "0xdd8ae1ecf6189f730031c359435c3b0914f4041b8a77499666425084d4465d77"
       }
     },
     {
       "id": "with-required-caps",
-      "description": "Non-empty requiredCapabilities set bound via requiredCapabilitiesHash.",
+      "description": "Non-empty requiredCapabilities set bound via requiredCapabilitiesHash; self-pay (grant/requirement/binding NONE).",
       "spec_refs": [
         "HSP.md §2.4.1",
         "HSP.md §3.1.3 requiredCapabilitiesHash"
@@ -58,6 +62,8 @@
             "profileId": "0x86d11d3a72d8e2d7d8c9bb9b9c2d8e9d7e6c5b4a39281706050403020100ffee",
             "payload": "0x000000000000000000000000a11ce00000000000000000000000000000000a11"
           },
+          "grantRef": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "requirementRef": "0x0000000000000000000000000000000000000000000000000000000000000000",
           "recipient": {
             "kind": 0,
             "payload": "0x000000000000000000000000bobbobbobbobbobbobbobbobbobbobbobbobbob0"
@@ -66,11 +72,12 @@
           "amount": "100000000",
           "chainId": 1,
           "deadline": 1714100900,
+          "settlementBinding": "0x0000000000000000000000000000000000000000000000000000000000000000",
           "requiredCapabilitiesHash": "0xfeed0123feed0123feed0123feed0123feed0123feed0123feed0123feed0123"
         }
       },
       "expected_output": {
-        "hash": "0x12203a7c542d501998e27e5510bba31818bf68efda2895dbbb6ea563552a1715"
+        "hash": "0x2c18bee063b8e280dd6cdd8daca516955e4a9ae5b2c5ea9cb079e4d82d08a0eb"
       }
     },
     {
@@ -93,6 +100,8 @@
             "profileId": "0x86d11d3a72d8e2d7d8c9bb9b9c2d8e9d7e6c5b4a39281706050403020100ffee",
             "payload": "0x000000000000000000000000d00d000000000000000000000000000000000d00"
           },
+          "grantRef": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "requirementRef": "0x0000000000000000000000000000000000000000000000000000000000000000",
           "recipient": {
             "kind": 1,
             "payload": "0x_COMMITMENT_PAYLOAD_PLACEHOLDER_"
@@ -101,6 +110,7 @@
           "amount": "50000000",
           "chainId": 1,
           "deadline": 1714200900,
+          "settlementBinding": "0x0000000000000000000000000000000000000000000000000000000000000000",
           "requiredCapabilitiesHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
         },
         "_inline_recipient_payload": {
@@ -111,7 +121,47 @@
         "_note": "Runner pre-processes _inline_recipient_payload via abi.encode(bytes32,bytes32) and substitutes into recipient.payload before computing the typed-data hash."
       },
       "expected_output": {
-        "hash": "0x2184984213ac7a0bcc9c3468b4a7631f5e90f769ba8271e2d2748891ec106aa3"
+        "hash": "0x0b64d707597d927b5d4acf81d5798218b05605234140833f4814696053a3cbad"
+      }
+    },
+    {
+      "id": "delegated-agent-payment",
+      "description": "DELEGATED: Agent-signed (eip712-eoa.v1), grantRef = grant-hash#agent-grant-erc1271-principal, a nonzero requirementRef, and a settlementBinding (proves:settlement-bound via=onchain-ref). Exercises all three new PaymentExecution fields non-NONE.",
+      "spec_refs": [
+        "HSP.md §2.1.2 PaymentExecution",
+        "HSP.md §2.4.1",
+        "HSP.md §5.1 step 4c (delegation grant)"
+      ],
+      "input": {
+        "domain": {
+          "name": "HSP",
+          "version": "1",
+          "chainId": 8453,
+          "verifyingContract": "0x0000000000000000000000000000000000000001"
+        },
+        "body": {
+          "nonce": "0xdededededededededededededededededededededededededededededededede",
+          "signer": {
+            "profileId": "0xd4fe0bde3910ed200206b4932a6ac949285964040c11741d6a19cbfb486cb03f",
+            "_profileId_note": "keccak256(\"eip712-eoa.v1\") — the Agent",
+            "payload": "0x000000000000000000000000a9e9a9e9a9e9a9e9a9e9a9e9a9e9a9e9a9e9a9e9"
+          },
+          "grantRef": "0xdfaa01a5bdc2cc99ceadf4c78f74f6f6cba56d5fdb52bf49a6f2dc73ae944dc0",
+          "requirementRef": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "recipient": {
+            "kind": 0,
+            "payload": "0x000000000000000000000000beefbeefbeefbeefbeefbeefbeefbeefbeefbeef"
+          },
+          "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "amount": "9990000",
+          "chainId": 8453,
+          "deadline": 1714500000,
+          "settlementBinding": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "requiredCapabilitiesHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      },
+      "expected_output": {
+        "hash": "0xca4a8d087129dda83a0befb2d37b95401a8b275bd306c1c7540426595eb57b46"
       }
     }
   ]

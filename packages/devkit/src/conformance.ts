@@ -21,14 +21,14 @@
 import { encodeAbiParameters, keccak256, stringToBytes, getAddress, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
-  mandateHash as computeMandateHash,
+  executionHash as computeMandateHash,
   receiptHash as computeReceiptHash,
   requiredCapabilitiesHash,
   buildCapabilityRegistry,
   Outcome,
   type DomainInput,
-  type MandateBody,
-  type SignedMandate,
+  type PaymentExecution,
+  type SignedExecution,
   type Receipt,
   type ReceiptInput,
   type ParsedCapability,
@@ -64,7 +64,7 @@ export interface ConformanceCtx {
 }
 
 export interface HappyCase {
-  mandate: SignedMandate;
+  mandate: SignedExecution;
   receipt: Receipt;
 }
 
@@ -113,12 +113,12 @@ export function defaultCtx(): ConformanceCtx {
 }
 
 /** Build + sign a mandate from the ctx fixtures (override any body field). */
-export async function makeSignedMandate(
+export async function makeSignedExecution(
   ctx: ConformanceCtx,
-  over: Partial<MandateBody> = {},
+  over: Partial<PaymentExecution> = {},
   caps: Hex[] = [],
-): Promise<{ mandate: SignedMandate; mandateHash: Hex }> {
-  const body: MandateBody = {
+): Promise<{ mandate: SignedExecution; executionHash: Hex }> {
+  const body: PaymentExecution = {
     nonce: keccak256(stringToBytes(`devkit-${Math.abs(JSON.stringify(over).length * 7919 + caps.length)}`)),
     signer: { profileId: eip712EoaSigner.profileIdHash, payload: encodeAbiParameters([{ type: 'address' }], [ctx.payer]) },
     recipient: { kind: 0, payload: encodeAbiParameters([{ type: 'address' }], [ctx.recipient]) },
@@ -131,13 +131,13 @@ export async function makeSignedMandate(
   };
   const mh = computeMandateHash(ctx.domain, body);
   const signerProof = await signMandateHash(ctx.payerPk, mh);
-  return { mandate: { body, signerProof, requiredCapabilities: caps }, mandateHash: mh };
+  return { mandate: { body, signerProof, requiredCapabilities: caps }, executionHash: mh };
 }
 
 /** Mutate receipt fields, then RE-SIGN with the adapter key (valid-signature mutant). */
 export async function resignReceipt(ctx: ConformanceCtx, receipt: Receipt, mutate: Partial<ReceiptInput>): Promise<Receipt> {
   const core: ReceiptInput = {
-    mandateHash: receipt.mandateHash,
+    executionHash: receipt.executionHash,
     adapterId: receipt.adapterId,
     adapterInstanceKey: receipt.adapterInstanceKey,
     seq: receipt.seq,
@@ -222,9 +222,9 @@ export async function runAdapterConformance(suite: AdapterConformanceSuite, ctx:
     outcomeClass: 'POLICY',
   });
 
-  // 4 — broken linkage (receipt re-signed over a different mandateHash)
+  // 4 — broken linkage (receipt re-signed over a different executionHash)
   {
-    const unlinked = await resignReceipt(ctx, happy.receipt, { mandateHash: keccak256(stringToBytes('devkit-other-mandate')) });
+    const unlinked = await resignReceipt(ctx, happy.receipt, { executionHash: keccak256(stringToBytes('devkit-other-mandate')) });
     check('broken mandate linkage rejected', await verify(happy.mandate, unlinked, [], policyFor(suite, ctx), new SeqIndex()), { ok: false, errorCode: 'HSP-RCPT-LINK' });
   }
 
@@ -260,7 +260,7 @@ export async function runAdapterConformance(suite: AdapterConformanceSuite, ctx:
     const vctx: VerifyContext = {
       proofBytes: happy.receipt.adapterProof,
       body: happy.mandate.body,
-      mandateHash: happy.receipt.mandateHash,
+      executionHash: happy.receipt.executionHash,
       signerSubject: evmAddressPartyRef(ctx.payer),
       receipt: (({ adapterProof: _p, ...header }) => header)(happy.receipt),
       now: ctx.evaluationTime,
@@ -272,7 +272,7 @@ export async function runAdapterConformance(suite: AdapterConformanceSuite, ctx:
       console.log(`  ok   schema emits observationId (${out.observationId.slice(0, 14)}…) — observation-consumption protected`);
     } else if (out.ok) {
       passed++;
-      console.log('  ok   schema emits NO observationId — fine ONLY if your settlement artifact is cryptographically bound to mandateHash (x402-style); otherwise one transfer could settle two mandates');
+      console.log('  ok   schema emits NO observationId — fine ONLY if your settlement artifact is cryptographically bound to executionHash (x402-style); otherwise one transfer could settle two mandates');
     } else {
       failed++;
       console.error('  FAIL schema.verify rejected the happy proof when called directly', out.errorCode);

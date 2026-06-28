@@ -8,7 +8,7 @@
 
 export {
   runAdapterConformance,
-  makeSignedMandate,
+  makeSignedExecution,
   resignReceipt,
   defaultCtx,
   type AdapterConformanceSuite,

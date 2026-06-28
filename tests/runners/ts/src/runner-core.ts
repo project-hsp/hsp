@@ -11,12 +11,12 @@ import { fileURLToPath } from 'node:url';
 import {
   capabilityId,
   requiredCapabilitiesHash,
-  mandateHash,
+  executionHash,
   receiptHash,
   preprocessInput,
   type CapabilityIdInput,
   type DomainInput,
-  type MandateBodyInput,
+  type PaymentExecutionInput,
   type ReceiptInput,
 } from '@hsp/core/derivations';
 import type { Hex } from 'viem';
@@ -83,8 +83,8 @@ export function runDerivation(derivation: string, rawInput: Record<string, unkno
       const hash = requiredCapabilitiesHash(input['capabilities'] as Hex[]);
       return { hash };
     }
-    case 'mandateHash': {
-      const hash = mandateHash(input['domain'] as DomainInput, input['body'] as MandateBodyInput);
+    case 'executionHash': {
+      const hash = executionHash(input['domain'] as DomainInput, input['body'] as PaymentExecutionInput);
       return { hash };
     }
     case 'receiptHash': {

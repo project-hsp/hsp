@@ -1,13 +1,13 @@
 /**
  * HSPClient — payer-side one-call orchestration (plan M2, user need 4.b):
  *
- *   pay() = build MandateBody → sign (HSPSigner) → POST /payments
+ *   pay() = build PaymentExecution → sign (HSPSigner) → POST /payments
  *         → broadcast the ERC-20 transfer FROM THE SAME ACCOUNT (wallet-settling:
  *           Transfer.from MUST equal body.signer — the schema enforces it)
  *         → wait for the tx to mine → POST /payments/:id/observe (retries 202)
  *         → returns { paymentId, txHash, awaitSettled() }
  *
- * Stepwise primitives (buildMandateBody / register / broadcastTransfer /
+ * Stepwise primitives (buildPaymentExecution / register / broadcastTransfer /
  * observe) are exposed for callers that want manual control (e.g. a browser
  * flow where each wallet prompt is a separate user action).
  */
@@ -22,13 +22,13 @@ import {
   type Hex,
 } from 'viem';
 import { encodeAbiParameters } from 'viem';
-import { requiredCapabilitiesHash, type Attestation, type MandateBody, type SignedMandate } from '@hsp/core';
+import { requiredCapabilitiesHash, type Attestation, type PaymentExecution, type SignedExecution } from '@hsp/core';
 import { eip712EoaSigner } from '@hsp/core/profiles/signer/eip712-eoa';
 import { resolveComplianceCaps, type ComplianceTag } from '@hsp/core/policy/compliance';
 import { toCaip2 } from '@hsp/core/x402/index';
 import { chainDomain, type ChainConfig } from '@hsp/core/chains/index';
 import {
-  signMandateBody,
+  signPaymentExecution,
   signEip3009Authorization,
   signerAddress,
   walletClientFor,
@@ -80,7 +80,7 @@ export interface PayHandle {
   paymentId: Hex;
   txHash: Hex;
   status: string;
-  mandate: SignedMandate;
+  mandate: SignedExecution;
   awaitSettled(opts?: { timeoutMs?: number; pollMs?: number }): Promise<PaymentSnapshot>;
 }
 
@@ -102,7 +102,7 @@ export class HSPClient {
     return parseUnits(human, this.opts.chain.stablecoin.decimals);
   }
 
-  buildMandateBody(p: PayParams): MandateBody {
+  buildPaymentExecution(p: PayParams): PaymentExecution {
     const chain = this.opts.chain;
     const caps = p.capabilities ?? [];
     return {
@@ -120,13 +120,13 @@ export class HSPClient {
     };
   }
 
-  async signMandate(p: PayParams): Promise<{ mandate: SignedMandate; mandateHash: Hex }> {
-    const body = this.buildMandateBody(p);
-    const { mandateHash, signerProof } = await signMandateBody(this.opts.signer, chainDomain(this.opts.chain), body);
-    return { mandate: { body, signerProof, requiredCapabilities: p.capabilities ?? [] }, mandateHash };
+  async signMandate(p: PayParams): Promise<{ mandate: SignedExecution; executionHash: Hex }> {
+    const body = this.buildPaymentExecution(p);
+    const { executionHash, signerProof } = await signPaymentExecution(this.opts.signer, chainDomain(this.opts.chain), body);
+    return { mandate: { body, signerProof, requiredCapabilities: p.capabilities ?? [] }, executionHash };
   }
 
-  async register(mandate: SignedMandate, attestations: Attestation[] = []): Promise<{ paymentId: Hex; status: string }> {
+  async register(mandate: SignedExecution, attestations: Attestation[] = []): Promise<{ paymentId: Hex; status: string }> {
     const r = await this.http('POST', '/payments', { chain: this.chainName, mandate, attestations });
     if (r.status !== 200 && r.status !== 201) {
       throw new Error(`register failed: HTTP ${r.status} ${JSON.stringify(r.json)}`);
@@ -222,7 +222,7 @@ export class HSPClient {
       params.capabilities = [...(params.capabilities ?? []), ...ccaps.map((c) => c.id)];
       attestations = await this.fetchComplianceAttestations(params.profile.compliance);
     }
-    const { mandate, mandateHash } = await this.signMandate(params);
+    const { mandate, executionHash } = await this.signMandate(params);
     const reg = await this.register(mandate, attestations);
     const txHash = await this.broadcastTransfer({
       to: params.to,
@@ -230,7 +230,7 @@ export class HSPClient {
       ...(params.token ? { token: params.token } : {}),
     });
     const obs = await this.observe(reg.paymentId, txHash);
-    void mandateHash;
+    void executionHash;
     return {
       paymentId: reg.paymentId,
       txHash,
@@ -276,7 +276,7 @@ export class HSPClient {
       capabilities = resolveComplianceCaps(p.profile.compliance).map((c) => c.id);
       attestations = await this.fetchComplianceAttestations(p.profile.compliance);
     }
-    const { mandate, mandateHash } = await this.signMandate({ to: p.merchant, amount: p.amount, token: tokenAddr, deadline, ...(capabilities ? { capabilities } : {}) });
+    const { mandate, executionHash } = await this.signMandate({ to: p.merchant, amount: p.amount, token: tokenAddr, deadline, ...(capabilities ? { capabilities } : {}) });
     // the payer owns registration: mandate (+ attestations) go straight to the Coordinator
     await this.register(mandate, attestations);
 
@@ -315,8 +315,8 @@ export class HSPClient {
     let x402: { status: number; json: unknown } = { status: 0, json: null };
     for (let i = 0; i <= 30; i++) {
       x402 = operatorUrl
-        ? await this.postAbs(`${operatorUrl}/observe/x402`, { coordinatorUrl, paymentId: mandateHash, ...evidence })
-        : await this.http('POST', `/payments/${mandateHash}/x402-observe`, evidence);
+        ? await this.postAbs(`${operatorUrl}/observe/x402`, { coordinatorUrl, paymentId: executionHash, ...evidence })
+        : await this.http('POST', `/payments/${executionHash}/x402-observe`, evidence);
       if (x402.status === 202) {
         await new Promise((res) => setTimeout(res, 2000));
         continue;
@@ -329,11 +329,11 @@ export class HSPClient {
     const result = x402.json as { status?: string; decision?: { ok?: boolean; errorCode?: string } };
 
     return {
-      paymentId: mandateHash,
+      paymentId: executionHash,
       txHash: settle.transaction,
       status: result.status ?? 'SETTLED',
       mandate,
-      awaitSettled: (o) => this.awaitTerminal(mandateHash, o),
+      awaitSettled: (o) => this.awaitTerminal(executionHash, o),
     };
   }
 

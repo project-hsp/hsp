@@ -10,7 +10,7 @@
 
 import { recoverAddress, decodeAbiParameters, getAddress, type Hex, type Address } from 'viem';
 import {
-  mandateHash as computeMandateHash,
+  executionHash as computeMandateHash,
   requiredCapabilitiesHash as computeReqCapsHash,
   receiptHash as computeReceiptHash,
   canonicalizeCapSet,
@@ -20,10 +20,10 @@ import {
   Outcome,
   RecipientKind,
   type OutcomeValue,
-  type SignedMandate,
+  type SignedExecution,
   type Receipt,
   type Attestation,
-  type MandateBody,
+  type PaymentExecution,
   type DomainInput,
   type ParsedCapability,
   type PartyRef,
@@ -50,7 +50,7 @@ function reject(outcomeClass: OutcomeClass, errorCode: string, errorDetail?: str
   return { ok: false, outcomeClass, errorCode, errorDetail };
 }
 
-function domainFor(body: MandateBody, policy: VerificationPolicy): DomainInput {
+function domainFor(body: PaymentExecution, policy: VerificationPolicy): DomainInput {
   // §1.5 / §5.1 step 1b: domain version is policy-pinned; "1" is the only value this revision defines.
   return {
     name: 'HSP',
@@ -62,7 +62,7 @@ function domainFor(body: MandateBody, policy: VerificationPolicy): DomainInput {
 
 export interface PhaseAResult {
   domain: DomainInput;
-  mandateHash: Hex;
+  executionHash: Hex;
   signerDecision: SignerDecision;
   roleAssignment: RoleAssignment;
 }
@@ -72,7 +72,7 @@ export interface PhaseAResult {
 // =============================================================================
 
 export async function verifyPhaseA(
-  mandate: SignedMandate,
+  mandate: SignedExecution,
   policy: VerificationPolicy,
 ): Promise<{ ok: true; result: PhaseAResult } | { ok: false; decision: AcceptDecision }> {
   const body = mandate.body;
@@ -109,8 +109,8 @@ export async function verifyPhaseA(
   // step 4 — signer verification
   const signerEntry = policy.signerProfiles.get(body.signer.profileId);
   if (!signerEntry) return { ok: false, decision: reject('POLICY', 'HSP-MAND-SIGNER-PROFILE-UNKNOWN') };
-  const mandateHash = computeMandateHash(domain, body);
-  const signerDecision = await signerEntry.profile.verify(body.signer.payload, mandate.signerProof, mandateHash, body);
+  const executionHash = computeMandateHash(domain, body);
+  const signerDecision = await signerEntry.profile.verify(body.signer.payload, mandate.signerProof, executionHash, body);
   if (!signerDecision.granted) {
     return { ok: false, decision: reject('PERMANENT', signerDecision.errorCode ?? 'HSP-MAND-SIGNER') };
   }
@@ -133,7 +133,7 @@ export async function verifyPhaseA(
   const roleAssignment = roleFunction(mandate, signerDecision, policy);
   return {
     ok: true,
-    result: { domain, mandateHash, signerDecision, roleAssignment },
+    result: { domain, executionHash, signerDecision, roleAssignment },
   };
 }
 
@@ -153,7 +153,7 @@ function admissible(admission: SchemaAdmission, isFollowUp: boolean, outcome: Ou
 }
 
 function checkSettlementConsistency(
-  body: MandateBody,
+  body: PaymentExecution,
   requiredCapabilities: Hex[],
   outcome: VerifyOutcome,
 ): AcceptDecision | null {
@@ -217,7 +217,7 @@ function checkSequencing(receipt: Receipt, trustEntry: AdapterTrustEntry, prior:
   const seq = Number(receipt.seq);
   const outcome = Number(receipt.outcome) as OutcomeValue;
 
-  // strictly increasing seq per (adapterId, adapterInstanceKey, mandateHash)
+  // strictly increasing seq per (adapterId, adapterInstanceKey, executionHash)
   if (prior.seen && seq <= prior.maxSeq) return reject('PERMANENT', 'HSP-RCPT-SEQ-STALE');
   // successor matrix (§2.2.2 / §5.2 step 7): DISPUTED is terminal …
   if (prior.disputed && outcome !== Outcome.DISPUTED) {
@@ -260,7 +260,7 @@ async function walkCap(
   attestations: Attestation[],
   policy: VerificationPolicy,
   now: number,
-  mandateHash: Hex,
+  executionHash: Hex,
   receiptHash: Hex,
 ): Promise<{ satisfied: boolean; code?: string; outcomeClass?: OutcomeClass }> {
   const famId = familyCapId(`${reg.namespace}:${reg.name}:${reg.version}`);
@@ -288,7 +288,7 @@ async function walkCap(
     // §3.3.3 admissibility for the required cap (strict or monotone, on structured values)
     if (!capSatisfies(reg, candidate)) continue;
     // admissible — run CR2 (a)–(e)
-    const cr2 = await validateCR2(entry, expectedSubject, anchors, now, mandateHash, receiptHash, scope);
+    const cr2 = await validateCR2(entry, expectedSubject, anchors, now, executionHash, receiptHash, scope);
     if (cr2.ok) return { satisfied: true };
     severity = Math.max(severity, cr2.code === 'HSP-ATT-ISSUER-UNTRUSTED' ? 2 : 1);
   }
@@ -299,7 +299,7 @@ async function walkCap(
 }
 
 export async function verifyPhaseB(
-  mandate: SignedMandate,
+  mandate: SignedExecution,
   a: PhaseAResult,
   receipt: Receipt,
   attestations: Attestation[],
@@ -312,7 +312,7 @@ export async function verifyPhaseB(
 
   // step 1 — linkage. (Role-wrapper resolution over requiredCapabilities is M2:
   //   it needs the id→registration lookup tied to the §3.3.3 (b) decision. M1 caps are empty.)
-  if (receipt.mandateHash !== a.mandateHash) return reject('PERMANENT', 'HSP-RCPT-LINK');
+  if (receipt.executionHash !== a.executionHash) return reject('PERMANENT', 'HSP-RCPT-LINK');
 
   // step 2 — adapter trust
   const trustEntry = policy.adapterTrust.get(adapterKey(receipt.adapterId, receipt.adapterInstanceKey));
@@ -327,14 +327,14 @@ export async function verifyPhaseB(
   if (getAddress(recoveredAdapter) !== getAddress(trustEntry.address)) return reject('PERMANENT', 'HSP-RCPT-SIG');
 
   // S4 equivocation (§2.2.3)
-  if (seqIndex.isEquivocation(receipt.adapterId, receipt.adapterInstanceKey, receipt.mandateHash, Number(receipt.seq), rHash)) {
+  if (seqIndex.isEquivocation(receipt.adapterId, receipt.adapterInstanceKey, receipt.executionHash, Number(receipt.seq), rHash)) {
     return reject('PERMANENT', 'HSP-RCPT-EQUIVOCATION');
   }
 
   // step 3 — schema match + admission
   const schemaReg = policy.proofSchemas.get(schemaKey(receipt.adapterId, receipt.proofSchemaId));
   if (!schemaReg) return reject('POLICY', 'HSP-RCPT-SCHEMA-UNKNOWN');
-  const prior = seqIndex.state(receipt.adapterId, receipt.adapterInstanceKey, receipt.mandateHash);
+  const prior = seqIndex.state(receipt.adapterId, receipt.adapterInstanceKey, receipt.executionHash);
   if (!admissible(schemaReg.admission, prior.seen, Number(receipt.outcome) as OutcomeValue)) {
     // prior-not-yet-witnessed (submit it first) = RETRYABLE; schema retired for new = POLICY (§8.0)
     const cls: OutcomeClass = !prior.seen ? 'POLICY' : 'RETRYABLE';
@@ -345,7 +345,7 @@ export async function verifyPhaseB(
   const ctx: VerifyContext = {
     proofBytes: receipt.adapterProof,
     body,
-    mandateHash: a.mandateHash,
+    executionHash: a.executionHash,
     signerSubject: a.signerDecision.resolvedSubject!,
     receipt: stripProof(receipt),
     now,
@@ -377,7 +377,7 @@ export async function verifyPhaseB(
       }
     }
     if (reg.namespace === 'attests') {
-      const res = await walkCap(reg, expectedSubject, attestations, policy, now, a.mandateHash, rHash);
+      const res = await walkCap(reg, expectedSubject, attestations, policy, now, a.executionHash, rHash);
       if (res.satisfied) covered.add(C.toLowerCase());
       else return reject(res.outcomeClass ?? 'PERMANENT', res.code ?? 'HSP-ATT-MISSING', C);
     }
@@ -401,20 +401,20 @@ export async function verifyPhaseB(
   // mandate — keyed (adapterId, observationId), ACROSS adapter instances.
   if (outcome.observationId) {
     const owner = obsIndex.owner(receipt.adapterId, outcome.observationId);
-    if (owner && owner.toLowerCase() !== receipt.mandateHash.toLowerCase()) {
+    if (owner && owner.toLowerCase() !== receipt.executionHash.toLowerCase()) {
       return reject('PERMANENT', 'HSP-RCPT-OBS-REUSED', `observation already consumed by ${owner}`);
     }
   }
 
   // accept — record the admitted emission in the stateful indexes
-  seqIndex.record(receipt.adapterId, receipt.adapterInstanceKey, receipt.mandateHash, {
+  seqIndex.record(receipt.adapterId, receipt.adapterInstanceKey, receipt.executionHash, {
     seq: Number(receipt.seq),
     outcome: oc,
     settledAt: Number(receipt.settledAt),
     receiptHash: rHash,
   });
   if (outcome.observationId) {
-    obsIndex.record(receipt.adapterId, outcome.observationId, receipt.mandateHash);
+    obsIndex.record(receipt.adapterId, outcome.observationId, receipt.executionHash);
   }
   return { ok: true, outcomeClass: outcomeClassForOk(oc) };
 }
@@ -428,7 +428,7 @@ export async function verifyPhaseB(
  * SeqIndex (the stateful-admission layer persists between receipts of one mandate).
  */
 export async function verify(
-  mandate: SignedMandate,
+  mandate: SignedExecution,
   receipt: Receipt,
   attestations: Attestation[],
   policy: VerificationPolicy,

@@ -14,7 +14,7 @@
  */
 
 import type { Address, Hex } from 'viem';
-import type { PartyRef, MandateBody, Receipt, ParsedCapability } from '../core/index.js';
+import type { PartyRef, PaymentExecution, Receipt, ParsedCapability } from '../core/index.js';
 
 // =============================================================================
 // §4.3.3 Verifier output
@@ -58,7 +58,7 @@ export interface SignerProfile {
   readonly profileIdHash: Hex; // == keccak256(profileId); == Signer.profileId
   readonly description: SignerProfileDescription;
   decode(payload: Hex): PartyRef;
-  verify(payload: Hex, proof: Hex, mandateHash: Hex, body: MandateBody): Promise<SignerDecision>;
+  verify(payload: Hex, proof: Hex, executionHash: Hex, body: PaymentExecution): Promise<SignerDecision>;
   isStateStale?(signerStateHash: Hex, stateAnchor: SignerStateAnchor, now: number): boolean;
 }
 
@@ -86,8 +86,8 @@ export interface AdapterTrustRoots {
 
 export interface VerifyContext {
   proofBytes: Hex; // receipt.adapterProof
-  body: MandateBody;
-  mandateHash: Hex;
+  body: PaymentExecution;
+  executionHash: Hex;
   signerSubject: PartyRef; // SignerDecision.resolvedSubject (verifier gated on granted=true)
   receipt: ReceiptHeader;
   now: number; // Unix seconds; verifier-pinned
@@ -106,7 +106,7 @@ export interface VerifyOutcome {
    * Canonical identity of the settlement-native observation, derived
    * deterministically from the (signed) adapterProof. MUST be present when
    * ok=true for schemas whose settlement artifact is NOT cryptographically
-   * bound to mandateHash (observation-based adapters); MAY be omitted when it
+   * bound to executionHash (observation-based adapters); MAY be omitted when it
    * is (e.g. x402). Consumed by §5.2 step 7's observation-consumption index.
    */
   observationId?: Hex;

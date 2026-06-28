@@ -4,7 +4,7 @@
   "vectors": [
     {
       "id": "public-settled-seq0",
-      "description": "SETTLED (outcome=1) first emission (seq=0) for the trivial-public mandate; single canonical adapter instance (adapterInstanceKey=0). mandateHash reuses mandate-hash#public-payment-no-caps-no-authz to cross-link the two packs. adapterId = keccak256(\"adapter:evm-transfer\"), proofSchemaId = keccak256(\"evm-transfer.proof.v1\") — the real ids the M1 public adapter registers.",
+      "description": "SETTLED (outcome=1) first emission (seq=0) for the trivial-public mandate; single canonical adapter instance (adapterInstanceKey=0). adapterId = keccak256(\"adapter:evm-transfer\"), proofSchemaId = keccak256(\"evm-transfer.proof.v1\") — the real ids the M1 public adapter registers.",
       "spec_refs": [
         "HSP.md §2.4.2 RECEIPT_PREIMAGE_TYPEHASH",
         "HSP.md §2.2.1 Receipt (9 fields)",
@@ -18,7 +18,7 @@
           "verifyingContract": "0x0000000000000000000000000000000000000001"
         },
         "receipt": {
-          "mandateHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
+          "executionHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
           "adapterId": "0xeeb081d6b4a5739edc5ce9a3ec05dcf768309684d7f3ebf29100f07ba89bb1b6",
           "adapterInstanceKey": "0x0000000000000000000000000000000000000000000000000000000000000000",
           "seq": 0,
@@ -29,7 +29,7 @@
         }
       },
       "expected_output": {
-        "hash": "0x29e0e7a390fc0f69d25d2174042fca39e56e45d4da1e80fdbc0524ae2670c0b0"
+        "hash": "0x337539f08fab8d84cdea7e4acaf85a67bbb4c9b1523199fed546ca4f41653d69"
       }
     },
     {
@@ -47,7 +47,7 @@
           "verifyingContract": "0x0000000000000000000000000000000000000001"
         },
         "receipt": {
-          "mandateHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
+          "executionHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
           "adapterId": "0xeeb081d6b4a5739edc5ce9a3ec05dcf768309684d7f3ebf29100f07ba89bb1b6",
           "adapterInstanceKey": "0x0000000000000000000000000000000000000000000000000000000000000000",
           "seq": 0,
@@ -58,7 +58,7 @@
         }
       },
       "expected_output": {
-        "hash": "0xee2b8972ef70c01243387d20169728a1618fe1dda461ebd7bbcd95ee7cec6d09"
+        "hash": "0x5dd8a6fb0d707602ff4a68aa53d125d18969bd5c935a91cb168d0b29884fca82"
       }
     },
     {
@@ -76,7 +76,7 @@
           "verifyingContract": "0x0000000000000000000000000000000000000001"
         },
         "receipt": {
-          "mandateHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
+          "executionHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
           "adapterId": "0xeeb081d6b4a5739edc5ce9a3ec05dcf768309684d7f3ebf29100f07ba89bb1b6",
           "adapterInstanceKey": "0x0000000000000000000000000000000000000000000000000000000000000000",
           "seq": 1,
@@ -87,7 +87,7 @@
         }
       },
       "expected_output": {
-        "hash": "0x063a84d1e6937d4431f0b975b446396f34c01d76e54d1fc08224b18688f4adfe"
+        "hash": "0xd34b6115deb35840bbafc356cf52fa23eb1a30173b9f7beba9661b1999bf3d43"
       }
     },
     {
@@ -106,7 +106,7 @@
           "verifyingContract": "0x0000000000000000000000000000000000000001"
         },
         "receipt": {
-          "mandateHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
+          "executionHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
           "adapterId": "0xeeb081d6b4a5739edc5ce9a3ec05dcf768309684d7f3ebf29100f07ba89bb1b6",
           "adapterInstanceKey": "0x0000000000000000000000000000000000000000000000000000000000000000",
           "seq": 2,
@@ -117,7 +117,7 @@
         }
       },
       "expected_output": {
-        "hash": "0x5fcd982f121bd9f12a252416aab22b621de2f99a39a8f9588a8664a33b28d230"
+        "hash": "0x29be8b16fea2184e07c169294a6033acd2557b2c181a532d34ee89c17873272d"
       }
     },
     {
@@ -134,7 +134,7 @@
           "verifyingContract": "0x0000000000000000000000000000000000000001"
         },
         "receipt": {
-          "mandateHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
+          "executionHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
           "adapterId": "0xeeb081d6b4a5739edc5ce9a3ec05dcf768309684d7f3ebf29100f07ba89bb1b6",
           "adapterInstanceKey": "0x0000000000000000000000000000000000000000000000000000000000000000",
           "seq": 0,
@@ -145,7 +145,7 @@
         }
       },
       "expected_output": {
-        "hash": "0x09f01e9de57b97735497250e4c89233abfd06e2f669b1f4868b545691a502513"
+        "hash": "0xf20ab609baa81b70f33878c41861a2be5bb532986acac718787b968540b4f6c8"
       }
     },
     {
@@ -164,7 +164,7 @@
           "verifyingContract": "0x0000000000000000000000000000000000000001"
         },
         "receipt": {
-          "mandateHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
+          "executionHash": "0x610342dea691be541603acdc0cb0706cb0bdfa27bc0fd0dde186ebb0cb80b314",
           "adapterId": "0xeeb081d6b4a5739edc5ce9a3ec05dcf768309684d7f3ebf29100f07ba89bb1b6",
           "adapterInstanceKey": "0x5cedd7a9b6101e4db341ed336c9f81627d2fd3a2b6d99682815c6022dc9536e1",
           "seq": 0,
@@ -175,7 +175,7 @@
         }
       },
       "expected_output": {
-        "hash": "0x8417a6a2faf064980123b930476d89bd1d9bd16d5231151304bd865c0da27722"
+        "hash": "0xfbd98d11e6a8ef762a507a91f7eea1ed330e7ecd1f180404da7468b6b25a464c"
       }
     }
   ]

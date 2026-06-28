@@ -11,7 +11,7 @@
  */
 
 import type { Address } from 'viem';
-import type { Receipt, SignedMandate } from '@hsp/core';
+import type { Receipt, SignedExecution } from '@hsp/core';
 import { resolveChain, type ChainName } from '@hsp/core/chains/index';
 import { HSPVerifier } from '@hsp/sdk';
 import { parseStablecoin } from '@hsp/core/chains/index';
@@ -27,7 +27,7 @@ if (!adapterAddress) throw new Error('HSP_PINNED_ADAPTER_ADDRESS required (pin i
 
 const base = (process.env.HSP_COORDINATOR_URL ?? 'http://127.0.0.1:8787').replace(/\/$/, '');
 const snap = (await (await fetch(`${base}/payments/${paymentId}`)).json()) as {
-  mandate: SignedMandate;
+  mandate: SignedExecution;
   receipts: { receipt: Receipt }[];
 };
 if (!snap.receipts?.length) throw new Error('no admitted receipts yet');

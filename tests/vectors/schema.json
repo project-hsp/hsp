@@ -14,7 +14,7 @@
     "derivation": {
       "type": "string",
       "enum": [
-        "mandateHash",
+        "executionHash",
         "receiptHash",
         "requiredCapabilitiesHash",
         "capabilityId"

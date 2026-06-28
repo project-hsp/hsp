@@ -1,6 +1,6 @@
 /**
  * Fixed role function — HSP.md §3.4. Not a plug-in; a deterministic function the
- * verifier computes once per (SignedMandate, SignerDecision) and consumes at
+ * verifier computes once per (SignedExecution, SignerDecision) and consumes at
  * §5.2 step 5. Closed role set {payer, payee, auditor}; payer ≡ verified signer.
  */
 
@@ -10,7 +10,7 @@ import {
   getAddress,
   type Hex,
 } from 'viem';
-import { RecipientKind, type Recipient, type SignedMandate, type PartyRef } from '../core/index.js';
+import { RecipientKind, type Recipient, type SignedExecution, type PartyRef } from '../core/index.js';
 import { type RoleName } from '../core/capabilities.js';
 import type { SignerDecision, VerificationPolicy } from './contracts.js';
 
@@ -35,7 +35,7 @@ export function decodeRecipient(recipient: Recipient): PartyRef {
  * nothing but signerDecision.resolvedSubject).
  */
 export function roleFunction(
-  mandate: SignedMandate,
+  mandate: SignedExecution,
   signerDecision: SignerDecision,
   policy: VerificationPolicy,
 ): RoleAssignment {

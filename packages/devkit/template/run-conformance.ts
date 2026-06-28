@@ -5,7 +5,7 @@
  */
 
 import { keccak256, stringToBytes } from 'viem';
-import { runAdapterConformance, makeSignedMandate, type ConformanceCtx, type HappyCase } from '../src/conformance.js';
+import { runAdapterConformance, makeSignedExecution, type ConformanceCtx, type HappyCase } from '../src/conformance.js';
 import { myAdapterSchema, buildAndSignMyReceipt, MY_ADAPTER_ID, MY_PROOF_SCHEMA_ID, type MyObservation } from './my-adapter.js';
 
 function observation(ctx: ConformanceCtx, txTag: string): MyObservation {
@@ -21,10 +21,10 @@ function observation(ctx: ConformanceCtx, txTag: string): MyObservation {
 }
 
 async function happyFor(ctx: ConformanceCtx, txTag: string, nonceTag: string): Promise<HappyCase> {
-  const { mandate, mandateHash } = await makeSignedMandate(ctx, { nonce: keccak256(stringToBytes(nonceTag)) });
+  const { mandate, executionHash } = await makeSignedExecution(ctx, { nonce: keccak256(stringToBytes(nonceTag)) });
   const receipt = await buildAndSignMyReceipt({
     domain: ctx.domain,
-    mandateHash,
+    executionHash,
     observation: observation(ctx, txTag),
     adapterPrivateKey: ctx.adapterPk,
     settledAt: ctx.evaluationTime - 10,
