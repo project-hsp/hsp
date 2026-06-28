@@ -170,7 +170,9 @@ export async function verifyPhaseA(
     const gHash = computeGrantHash(domain, g);
     const grantDecision = await principalEntry.profile.verify(g.principal.payload, grant.principalProof, gHash, body);
     if (!grantDecision.granted || !grantDecision.resolvedSubject) {
-      return { ok: false, decision: reject('PERMANENT', grantDecision.errorCode ?? 'HSP-GRANT-SIGNER') };
+      // a grant-principal signature failure is HSP-GRANT-SIGNER regardless of the profile's
+      // own execution-side code (e.g. erc1271's HSP-MAND-SIGNER / -STATE-UNAVAILABLE).
+      return { ok: false, decision: reject('PERMANENT', 'HSP-GRANT-SIGNER', grantDecision.errorCode) };
     }
     // 4c-ii — the Agent the Principal authorized is the one who signed this execution (PartyRef)
     const agentEntry = policy.signerProfiles.get(g.agent.profileId);

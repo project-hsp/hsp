@@ -16,6 +16,7 @@
     "e2e:public": "npm run e2e:public -w hsp-conformance-runner",
     "e2e:anvil": "npm run e2e:anvil -w hsp-conformance-runner",
     "e2e:compliance": "npm run e2e:compliance -w hsp-conformance-runner",
-    "test:devkit": "npm run example -w @hsp/devkit && npm run template -w @hsp/devkit"
+    "test:devkit": "npm run example -w @hsp/devkit && npm run template -w @hsp/devkit",
+    "e2e:delegation": "npm run e2e:delegation -w hsp-conformance-runner"
   }
 }

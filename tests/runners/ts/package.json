@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "e2e:public": "tsx src/e2e/public.ts",
     "e2e:anvil": "tsx src/e2e/anvil-public.ts",
-    "e2e:compliance": "tsx src/e2e/compliance.ts"
+    "e2e:compliance": "tsx src/e2e/compliance.ts",
+    "e2e:delegation": "tsx src/e2e/delegation.ts"
   },
   "dependencies": {
     "@hsp/core": "*",

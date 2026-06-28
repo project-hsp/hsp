@@ -23,6 +23,15 @@ contract MockERC1271Account {
         owner = _owner;
     }
 
+    /// @notice Minimal account execution — the owner drives the account to move value, so the
+    ///         settlement's `Transfer.from` is THIS account (the Principal), not the agent/owner.
+    function execute(address target, bytes calldata data) external returns (bytes memory) {
+        require(msg.sender == owner, "not owner");
+        (bool ok, bytes memory ret) = target.call(data);
+        require(ok, "exec failed");
+        return ret;
+    }
+
     function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
         if (signature.length != 65) return INVALID;
         bytes32 r;
