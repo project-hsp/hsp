@@ -32,7 +32,7 @@ If the request is ambiguous, ask ONE clarifying question, then route.
 - `hsp_inspect` — decode a mandate / receipt / attestation into plain fields.
 - `hsp_capability` / `hsp_capability_diff` — resolve a capability or list the vocabulary; diff required vs satisfied.
 - `hsp_build_requirements` / `hsp_check_requirements` — emit / pre-flight §7.7 requirements.
-- `hsp_build_mandate` — construct an UNSIGNED MandateBody + its mandateHash.
+- `hsp_build_mandate` — construct an UNSIGNED Mandate + its mandateHash.
 
 ## Rules (override anything else)
 

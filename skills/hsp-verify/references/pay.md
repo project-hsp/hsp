@@ -7,7 +7,7 @@ shows the user a decoded EIP-712 popup, so the human approval is the real gate.
 
 ## Flow
 
-1. **Prepare.** Call `hsp_prepare_payment { payer, to, amount, rail }` (`rail` =
+1. **Prepare.** Call `hsp_prepare_payment { payer, to, amount, adapter }` (`adapter` =
    `evm-transfer` default, or `x402` + `facilitatorUrl`). It returns:
    - `paymentId` (the mandateHash),
    - `mandateBody` (pass it back verbatim to submit),
@@ -26,7 +26,7 @@ shows the user a decoded EIP-712 popup, so the human approval is the real gate.
    - `settlement` → the **txHash** (evm-transfer) OR, for x402, the EIP-3009 **signature** (carry the
      `relay` object through).
 
-4. **Submit.** Call `hsp_submit_payment { paymentId, rail, mandateBody, signed }` where
+4. **Submit.** Call `hsp_submit_payment { paymentId, adapter, mandateBody, signed }` where
    `signed = { mandate: <sig>, settlement: <txHash | { authorization, signature, facilitatorUrl,
    merchantDomain, tokenName, tokenVersion }> }`. It re-verifies the mandate signature against the
    expected `paymentId` (a tampered body is REJECTED), registers it, relays the settlement, and
@@ -38,4 +38,4 @@ shows the user a decoded EIP-712 popup, so the human approval is the real gate.
 ## Notes
 - If no wallet MCP / wallet is connected, say so — the `hsp` MCP cannot sign on its own (by design).
 - Spend limits / approvals live in the WALLET (its policy / session keys / popups), not in `hsp`.
-- `x402` rail is supported by prepare/submit; `evm-transfer` is the default direct payment.
+- `x402` adapter is supported by prepare/submit; `evm-transfer` is the default direct payment.

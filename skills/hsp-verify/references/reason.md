@@ -34,5 +34,5 @@ A capability is `verb:object:version[params]`; the verifier compares sets byte-f
 ## Construct an intent (no signing, no money)
 
 `hsp_build_mandate {to, amount, signer, token?, deadline?, capabilities?}` → an UNSIGNED
-`MandateBody` + its `mandateHash`. To actually sign + pay, hand the hash to `@hsp/sdk` —
+`Mandate` + its `mandateHash`. To actually sign + pay, hand the hash to `@hsp/sdk` —
 these tools never sign and never move money.

@@ -75,18 +75,22 @@ subset relation and a battery of consistency rules. Nothing else.
 
 #### Mandate — the signed intent
 
-A `MandateBody` has exactly eight fields, signed as EIP-712 typed data
-(domain `{name: "HSP", version: "1", chainId, verifyingContract}`):
+A `Mandate` has eleven fields, signed as EIP-712 typed data
+(domain `{name: "HSP", version: "1", chainId, verifyingContract}`). For a simple self-pay the three
+delegation/binding fields (`grantRef`, `requirementRef`, `settlementBinding`) are `bytes32(0)` (NONE):
 
 | Field | Meaning |
 |---|---|
 | `nonce` | unique 32 bytes; pure replay protection. Two mandates with identical bodies *are* the same mandate — use distinct nonces for repeated identical orders. |
 | `signer` | profile-tagged signer reference. The baseline profile is `eip712-eoa.v1` (a plain EOA); the profile system is pluggable (smart accounts / ERC-1271 are the designed extension). |
+| `grantRef` | `grantHash` of a `DelegationGrant` for a **delegated** payment (§4.8); `NONE` for self-pay. |
+| `requirementRef` | `requirementHash` of the `PayeeRequirement` (§4.7) this mandate satisfies; `NONE` if none. |
 | `recipient` | tagged `ADDRESS` — a plain EVM address. |
 | `token` | the ERC-20 contract address (v1 is EVM-first; non-ERC-20 assets are identified per adapter binding). |
 | `amount` | base units; the exact transfer value the proof must match. |
 | `chainId` | settlement chain; must be non-zero. |
 | `deadline` | Unix seconds. A receipt is admissible only if its settlement time `settledAt ≤ deadline`. Verification may happen later — an on-time settlement stays verifiable forever. |
+| `settlementBinding` | commitment for `proves:settlement-bound` (pins this mandate to its own settlement); `NONE` if not required. |
 | `requiredCapabilitiesHash` | hash of the sorted canonical capability-id set. `bytes32(0)` ⇔ empty set ⇔ trivial public payment. |
 
 The **`mandateHash`** (EIP-712 digest) is the payment's identity everywhere — the Coordinator's
@@ -380,7 +384,7 @@ const handle = await client.pay({
 });
 ```
 
-One `pay()` call performs: ① build the `MandateBody` (random nonce, default deadline) → ② compute
+One `pay()` call performs: ① build the `Mandate` (random nonce, default deadline) → ② compute
 `mandateHash`, sign EIP-712 → ③ `POST /payments` → ④ broadcast the ERC-20 `transfer` **from the same
 signer** (mandate signer ≡ on-chain sender is enforced by the proof schema) → ⑤ wait for the tx
 receipt, then `POST …/observe` (retrying on `202`) → ⑥ return a handle.
@@ -483,6 +487,44 @@ payer↔payee handshake without either side hand-assembling fields.
 `fetchRequirements(coordinatorUrl, chain)` fetches the deployment's mandate requirements for display
 or client-side prevalidation.
 
+### 4.8 Delegated payments — payDelegated()
+
+A **delegated** payment has two parties: a **Principal** (a smart account / fund owner) authorizes an
+**Agent** to spend within bounds, then the Agent pays on *its own* key while the Principal's account
+moves the funds. The Principal is the **payer of record** — payer-side caps (KYC, disclosure) bind to
+it — and the Agent never holds the Principal's key. Spend *scope* is enforced **on-chain** by the
+account (`erc1271.v1` / `proves:within-permission`); HSP verifies the receipt proves the payment stayed
+in-grant.
+
+```ts
+import { HSPClient, buildDelegationGrant, signGrant, erc1271OwnerExecutor } from '@hsp/sdk';
+import { chainDomain } from '@hsp/core/chains/index';
+
+// 1. Principal authorizes the Agent — signs a DelegationGrant once (reusable until expiry)
+const grant = await signGrant(principalSigner, chainDomain(chain), buildDelegationGrant({
+  account,            // the erc1271 smart account whose funds move
+  agent,              // the EOA address the Agent signs mandates with
+  chainId: chain.chainId,
+  payerRequiredCaps,  // optional: floor every payment must cover
+  payerAllowedCaps,   // optional: ceiling the Agent may declare
+  // expiry defaults to now + 24h
+}));
+
+// 2. Agent pays — signs the Mandate (grantRef = grantHash); the account settles the transfer
+const agentClient = new HSPClient({ coordinatorUrl, signer: agentSigner, chain });
+const handle = await agentClient.payDelegated({
+  to, amount, grant,
+  account,                                              // Transfer.from = this account
+  executor: erc1271OwnerExecutor(ownerSigner, rpcUrl, chain.chainId), // dev/demo executor
+});
+await handle.awaitSettled();
+```
+
+`erc1271OwnerExecutor` is the **dev/demo** executor (the account owner broadcasts `account.execute`);
+production supplies an **ERC-4337 UserOp** executor instead. The verifier rejects a mismatched
+grant/agent (`HSP-GRANT-SIGNER` / `HSP-GRANT-AGENT-MISMATCH`) and binds the on-chain `Transfer.from`
+to `accountOf(principal)`.
+
 ---
 
 ## 5. AI integration — @hsp/mcp and the skill
@@ -497,7 +539,7 @@ wallet) signs it, and it *submits* the signed result (`hsp_prepare_payment` / `h
 [§5.1.1](#511-paying--key-less-via-a-wallet-mcp)). **`@hsp/sdk` (`HSPClient.pay` / `payX402`) is still
 a valid way to pay from code**; the MCP is the way an *agent* pays without ever holding a key.
 
-Ten tools:
+Eleven tools:
 
 | Tool | What it does |
 |---|---|
@@ -508,7 +550,8 @@ Ten tools:
 | `hsp_capability_diff` | compare a required vs satisfied capability set (canonicalized, the verifier rule) → what's missing to close the gap. |
 | `hsp_build_requirements` | emit a §7.7 `PayeeRequirement` (what a payee/deployment advertises). `mode: public` (empty policy) \| `compliance` (requires the given KYC/sanctions issuers). |
 | `hsp_check_requirements` | pre-flight: does a mandate satisfy a given `PayeeRequirement`? (covers the policy floor + a supported chain) — call before paying. |
-| `hsp_build_mandate` | construct an **UNSIGNED** `MandateBody` + its `mandateHash`. Signing is external (the payer signs with their key, e.g. via a wallet MCP or `@hsp/sdk`); this tool never signs and never moves money. |
+| `hsp_build_mandate` | construct an **UNSIGNED** `Mandate` + its `mandateHash`. Signing is external (the payer signs with their key, e.g. via a wallet MCP or `@hsp/sdk`); this tool never signs and never moves money. |
+| `hsp_build_grant` | construct an **UNSIGNED** `DelegationGrant` + its `grantHash` (delegated payments, §2.1.1) — a Principal smart account authorizing an Agent to sign mandates on its behalf. Signing is external (the Principal owner signs `grantHash`, e.g. `@hsp/sdk` `signGrant`). |
 | `hsp_prepare_payment` | prepare a payment: register the mandate and return the **UNSIGNED** things to sign as `toSign[]`, in **standard wallet-RPC shapes** — the HSP mandate (`eth_signTypedData_v4`) + the settlement (`eth_sendTransaction` for evm-transfer; EIP-3009 `eth_signTypedData_v4` for x402). **Signs nothing** — route `toSign[]` to a wallet MCP / wallet. |
 | `hsp_submit_payment` | relay the **externally-signed** mandate + settlement to the Coordinator. Re-verifies the signature first (a tampered body is rejected), observes the settlement, and returns the verified status (`SETTLED`). Holds no key — only a Coordinator write key. |
 

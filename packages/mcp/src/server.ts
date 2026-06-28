@@ -290,7 +290,7 @@ const TOOLS = [
         signer: S('the EVM address (0x…) that will sign — the payer for self-pay, the Agent for a delegated payment'),
         deadline: { type: 'number', description: 'optional unix seconds; default now + 1h' },
         capabilities: { type: 'array', description: 'optional required capability ids (0x…)' },
-        grantRef: S('optional grantHash for a DELEGATED execution (from hsp_build_grant); omit for self-pay'),
+        grantRef: S('optional grantHash for a DELEGATED payment (from hsp_build_grant); omit for self-pay'),
       },
       ['to', 'amount', 'signer'],
     ),
@@ -305,8 +305,8 @@ const TOOLS = [
         to: S('recipient EVM address (0x…)'),
         amount: S('amount in token base units (decimal string)'),
         token: S('optional ERC-20 address; defaults to the chain-pinned stablecoin'),
-        rail: S("'evm-transfer' (default) | 'x402'"),
-        facilitatorUrl: S('for rail=x402: the x402 facilitator base URL'),
+        adapter: S("'evm-transfer' (default) | 'x402'"),
+        facilitatorUrl: S('for adapter=x402: the x402 facilitator base URL'),
         deadline: { type: 'number', description: 'optional unix seconds; default now + 1h' },
       },
       ['payer', 'to', 'amount'],
@@ -319,7 +319,7 @@ const TOOLS = [
     inputSchema: A(
       {
         paymentId: S('the paymentId returned by hsp_prepare_payment (0x…)'),
-        rail: S("'evm-transfer' | 'x402' (as returned by prepare)"),
+        adapter: S("'evm-transfer' | 'x402' (as returned by prepare)"),
         mandateBody: { type: 'object', description: 'the mandateBody from hsp_prepare_payment, passed back verbatim' },
         signed: {
           type: 'object',
@@ -328,7 +328,7 @@ const TOOLS = [
         },
         grant: { type: 'object', description: 'optional SignedDelegationGrant (delegated payments) matching mandateBody.grantRef' },
       },
-      ['paymentId', 'rail', 'mandateBody', 'signed'],
+      ['paymentId', 'adapter', 'mandateBody', 'signed'],
     ),
   },
 ] as const;
@@ -521,7 +521,7 @@ export function buildServer(deps: McpDeps): Server {
             mandateBody: body,
             mandateHash: hash,
             requiredCapabilities: labelCaps(caps),
-            next: 'sign mandateHash with the payer key (e.g. @hsp/sdk signMandate) — this tool does NOT sign or move money',
+            next: 'sign mandateHash with the payer key (e.g. @hsp/sdk signMandateBody) — this tool does NOT sign or move money',
           });
         }
 
@@ -530,14 +530,14 @@ export function buildServer(deps: McpDeps): Server {
           const to = getAddress(String(args.to));
           const amount = BigInt(String(args.amount));
           const token = args.token ? getAddress(String(args.token)) : deps.chain.stablecoin.address;
-          const rail = (args.rail as string) ?? 'evm-transfer';
+          const adapter = (args.adapter as string) ?? 'evm-transfer';
           const deadline = (args.deadline as number) ?? Math.floor(Date.now() / 1000) + 3600;
           const { body, mandateHash } = buildMandate(deps, { payer, to, amount: amount.toString(), token, deadline, caps: [] });
           const mandateSign = { id: 'mandate', method: 'eth_signTypedData_v4', params: { address: payer, typedData: mandateTypedData(chainDomain(deps.chain), body) }, expect: { mandateHash } };
 
-          if (rail === 'x402') {
+          if (adapter === 'x402') {
             const facilitatorUrl = String(args.facilitatorUrl ?? '').replace(/\/$/, '');
-            if (!facilitatorUrl) return text({ error: 'facilitatorUrl-required', detail: 'rail=x402 needs facilitatorUrl' }, true);
+            if (!facilitatorUrl) return text({ error: 'facilitatorUrl-required', detail: 'adapter=x402 needs facilitatorUrl' }, true);
             const pc = createPublicClient({ transport: http(deps.chain.rpcUrl) });
             const [name, version] = (await Promise.all([
               pc.readContract({ address: token, abi: ERC20_DOMAIN, functionName: 'name' }),
@@ -551,7 +551,7 @@ export function buildServer(deps: McpDeps): Server {
               method: 'eth_signTypedData_v4',
               params: { address: payer, typedData: eip3009TypedData({ name, version, chainId: deps.chain.chainId, address: token }, auth) },
               relay: {
-                rail: 'x402',
+                adapter: 'x402',
                 facilitatorUrl,
                 merchantDomain: info.merchantDomain ?? '',
                 tokenName: name,
@@ -559,17 +559,17 @@ export function buildServer(deps: McpDeps): Server {
                 authorization: { from: payer, to, value: amount.toString(), validAfter: '0', validBefore: String(validBefore), nonce: auth.nonce },
               },
             };
-            return text({ paymentId: mandateHash, rail: 'x402', mandateBody: body, toSign: [mandateSign, settleSign], next: 'route each toSign[].method to your wallet MCP, then call hsp_submit_payment' });
+            return text({ paymentId: mandateHash, adapter: 'x402', mandateBody: body, toSign: [mandateSign, settleSign], next: 'route each toSign[].method to your wallet MCP, then call hsp_submit_payment' });
           }
 
           const data = encodeFunctionData({ abi: ERC20_TRANSFER, functionName: 'transfer', args: [to, amount] });
           const settleSign = { id: 'settlement', method: 'eth_sendTransaction', params: { tx: { from: payer, to: token, data, value: '0x0', chainId: deps.chain.chainId } } };
-          return text({ paymentId: mandateHash, rail: 'evm-transfer', mandateBody: body, toSign: [mandateSign, settleSign], next: 'have your wallet MCP sign+broadcast the tx, then call hsp_submit_payment with the mandate signature + the settlement txHash' });
+          return text({ paymentId: mandateHash, adapter: 'evm-transfer', mandateBody: body, toSign: [mandateSign, settleSign], next: 'have your wallet MCP sign+broadcast the tx, then call hsp_submit_payment with the mandate signature + the settlement txHash' });
         }
 
         case 'hsp_submit_payment': {
           if (!deps.coordinatorUrl) return text({ error: 'no-coordinator', detail: 'hsp_submit_payment needs HSP_COORDINATOR_URL (+ HSP_API_KEY)' }, true);
-          const rail = String(args.rail);
+          const adapter = String(args.adapter);
           const body = args.mandateBody as Mandate;
           const signed = args.signed as { mandate: Hex; settlement: unknown };
           const mandateHash = computeMandateHash(chainDomain(deps.chain), body);
@@ -586,7 +586,7 @@ export function buildServer(deps: McpDeps): Server {
           const reg = await coordHttp(deps, 'POST', '/payments', { chain: deps.chain.name, mandate, attestations: [], ...(args.grant ? { grant: args.grant as SignedDelegationGrant } : {}) });
           if (reg.status !== 200 && reg.status !== 201) return text({ error: 'register-failed', status: reg.status, detail: reg.json }, true);
 
-          if (rail === 'x402') {
+          if (adapter === 'x402') {
             const s = signed.settlement as { authorization: Record<string, unknown>; signature: Hex; facilitatorUrl: string; merchantDomain: string; tokenName: string; tokenVersion: string };
             const payTo = getAddress(decodeAbiParameters([{ type: 'address' }], body.recipient.payload)[0] as Address);
             const requirements = { scheme: 'exact', network: toCaip2(deps.chain.chainId), asset: getAddress(body.token), amount: String(body.amount), payTo, maxTimeoutSeconds: 60, extra: { name: s.tokenName, version: s.tokenVersion } };
