@@ -11,6 +11,7 @@
 import { recoverAddress, decodeAbiParameters, getAddress, type Hex, type Address } from 'viem';
 import {
   executionHash as computeMandateHash,
+  grantHash as computeGrantHash,
   requiredCapabilitiesHash as computeReqCapsHash,
   receiptHash as computeReceiptHash,
   canonicalizeCapSet,
@@ -21,6 +22,7 @@ import {
   RecipientKind,
   type OutcomeValue,
   type SignedExecution,
+  type SignedDelegationGrant,
   type Receipt,
   type Attestation,
   type PaymentExecution,
@@ -42,7 +44,7 @@ import type {
   SchemaAdmission,
 } from './contracts.js';
 import { adapterKey, schemaKey } from './contracts.js';
-import { roleFunction, type RoleAssignment } from './roles.js';
+import { roleFunction, partyRefEqual, type RoleAssignment } from './roles.js';
 import { outcomeClassForOk } from './outcome.js';
 import { SeqIndex, ObservationIndex, type PriorState } from './seq-index.js';
 
@@ -65,6 +67,8 @@ export interface PhaseAResult {
   executionHash: Hex;
   signerDecision: SignerDecision;
   roleAssignment: RoleAssignment;
+  payerAccount: PartyRef; // §4.1 accountOf(principal) — the sender binds to this (§5.2 step 4)
+  grantWindow?: { notBefore: number; expiry: number }; // delegated only — checked at §5.2 step 7
 }
 
 // =============================================================================
@@ -74,8 +78,11 @@ export interface PhaseAResult {
 export async function verifyPhaseA(
   mandate: SignedExecution,
   policy: VerificationPolicy,
+  grant?: SignedDelegationGrant,
 ): Promise<{ ok: true; result: PhaseAResult } | { ok: false; decision: AcceptDecision }> {
   const body = mandate.body;
+  const NONE32 = `0x${'00'.repeat(32)}`;
+  const isDelegated = body.grantRef !== undefined && body.grantRef.toLowerCase() !== NONE32;
   const now = policy.evaluationTime;
 
   // step 1a / 1b — admissibility
@@ -97,12 +104,27 @@ export async function verifyPhaseA(
     return { ok: false, decision: reject('PERMANENT', 'HSP-MAND-REQHASH-MISMATCH') };
   }
 
-  // step 3b — mandated-capabilities predicate (§7.2.2)
-  if (policy.policyRequiredCapabilities && policy.policyRequiredCapabilities.length > 0) {
-    const have = new Set(canon.map((c) => c.toLowerCase()));
-    const missing = policy.policyRequiredCapabilities.filter((m) => !have.has(m.toLowerCase()));
-    if (missing.length > 0) {
-      return { ok: false, decision: reject('POLICY', 'HSP-MAND-REQ-INSUFFICIENT', missing.join(',')) };
+  // step 3b — required-capabilities floor & ceiling (§5.1 step 3b)
+  //   floor   = policyRequiredCapabilities (payee/deployment) ∪ grant.payerRequiredCaps (payer)
+  //   ceiling = grant.payerAllowedCaps (delegated only)
+  const have = new Set(canon.map((c) => c.toLowerCase()));
+  const grantBody = isDelegated ? grant?.body : undefined;
+  const floor = [...(policy.policyRequiredCapabilities ?? []), ...(grantBody?.payerRequiredCaps ?? [])];
+  const floorMissing = floor.filter((m) => !have.has(m.toLowerCase()));
+  if (floorMissing.length > 0) {
+    return { ok: false, decision: reject('POLICY', 'HSP-MAND-REQ-INSUFFICIENT', floorMissing.join(',')) };
+  }
+  if (grantBody) {
+    const ceiling = new Set((grantBody.payerAllowedCaps ?? []).map((c) => c.toLowerCase()));
+    const incompat = floor.filter((m) => !ceiling.has(m.toLowerCase()));
+    if (incompat.length > 0) {
+      // the required floor is not within what the Principal authorized — grant↔requirement mismatch.
+      return { ok: false, decision: reject('POLICY', 'HSP-GRANT-REQ-INCOMPAT', incompat.join(',')) };
+    }
+    const overCeiling = canon.filter((c) => !ceiling.has(c.toLowerCase()));
+    if (overCeiling.length > 0) {
+      // the Agent declared a payer-side cap above the ceiling (over-disclosure).
+      return { ok: false, decision: reject('PERMANENT', 'HSP-GRANT-CAP-CEILING', overCeiling.join(',')) };
     }
   }
 
@@ -130,10 +152,46 @@ export async function verifyPhaseA(
     return { ok: false, decision: reject('PERMANENT', 'HSP-MAND-SIGNER', 'granted without resolvedSubject (SP6)') };
   }
 
-  const roleAssignment = roleFunction(mandate, signerDecision, policy);
+  // step 4c — delegation grant (§5.1 step 4c). Self-pay: the signer is its own account.
+  let principalSubject: PartyRef = signerDecision.resolvedSubject;
+  let payerAccount: PartyRef;
+  let grantWindow: { notBefore: number; expiry: number } | undefined;
+
+  if (isDelegated) {
+    if (!grant) {
+      return { ok: false, decision: reject('PERMANENT', 'HSP-GRANT-SIGNER', 'grantRef set but no grant supplied') };
+    }
+    const g = grant.body;
+    const principalEntry = policy.signerProfiles.get(g.principal.profileId);
+    if (!principalEntry) {
+      return { ok: false, decision: reject('POLICY', 'HSP-MAND-SIGNER-PROFILE-UNKNOWN', 'grant principal profile') };
+    }
+    // 4c-i — the Principal signed grantHash (typically erc1271.v1, verified on-chain)
+    const gHash = computeGrantHash(domain, g);
+    const grantDecision = await principalEntry.profile.verify(g.principal.payload, grant.principalProof, gHash, body);
+    if (!grantDecision.granted || !grantDecision.resolvedSubject) {
+      return { ok: false, decision: reject('PERMANENT', grantDecision.errorCode ?? 'HSP-GRANT-SIGNER') };
+    }
+    // 4c-ii — the Agent the Principal authorized is the one who signed this execution (PartyRef)
+    const agentEntry = policy.signerProfiles.get(g.agent.profileId);
+    if (!agentEntry) {
+      return { ok: false, decision: reject('POLICY', 'HSP-MAND-SIGNER-PROFILE-UNKNOWN', 'grant agent profile') };
+    }
+    const agentSubject = agentEntry.profile.decode(g.agent.payload);
+    if (!partyRefEqual(agentSubject, signerDecision.resolvedSubject)) {
+      return { ok: false, decision: reject('PERMANENT', 'HSP-GRANT-AGENT-MISMATCH') };
+    }
+    principalSubject = grantDecision.resolvedSubject; // payer = Principal (§3.4)
+    payerAccount = principalEntry.profile.accountOf(g.principal.payload);
+    grantWindow = { notBefore: g.notBefore, expiry: g.expiry };
+  } else {
+    payerAccount = signerEntry.profile.accountOf(body.signer.payload);
+  }
+
+  const roleAssignment = roleFunction(mandate, signerDecision, policy, isDelegated ? principalSubject : undefined);
   return {
     ok: true,
-    result: { domain, executionHash, signerDecision, roleAssignment },
+    result: { domain, executionHash, signerDecision, roleAssignment, payerAccount, grantWindow },
   };
 }
 
@@ -347,6 +405,7 @@ export async function verifyPhaseB(
     body,
     executionHash: a.executionHash,
     signerSubject: a.signerDecision.resolvedSubject!,
+    payerAccount: a.payerAccount,
     receipt: stripProof(receipt),
     now,
     trustRoots: schemaReg.trustRoots,
@@ -395,6 +454,13 @@ export async function verifyPhaseB(
   if ((oc === Outcome.ATTEMPTED || oc === Outcome.SETTLED) && Number(receipt.settledAt) > Number(body.deadline)) {
     return reject('PERMANENT', 'HSP-MAND-EXPIRED', 'settledAt > body.deadline (settled after mandate expiry)');
   }
+  // grant validity window (delegated only) — the delegation must be live at settlement (§5.2 step 7)
+  if (a.grantWindow && (oc === Outcome.ATTEMPTED || oc === Outcome.SETTLED)) {
+    const sa = Number(receipt.settledAt);
+    if (sa < a.grantWindow.notBefore || sa > a.grantWindow.expiry) {
+      return reject('PERMANENT', 'HSP-GRANT-EXPIRED', 'settledAt outside [grant.notBefore, grant.expiry]');
+    }
+  }
   const seqCheck = checkSequencing(receipt, trustEntry, prior);
   if (seqCheck) return seqCheck;
   // observation consumption: one settlement-native observation settles at most one
@@ -434,8 +500,9 @@ export async function verify(
   policy: VerificationPolicy,
   seqIndex: SeqIndex = new SeqIndex(),
   obsIndex: ObservationIndex = new ObservationIndex(),
+  grant?: SignedDelegationGrant, // delegated payments — the Principal-signed grant (§2.1.1)
 ): Promise<AcceptDecision> {
-  const a = await verifyPhaseA(mandate, policy);
+  const a = await verifyPhaseA(mandate, policy, grant);
   if (!a.ok) return a.decision;
   return verifyPhaseB(mandate, a.result, receipt, attestations, policy, seqIndex, obsIndex);
 }

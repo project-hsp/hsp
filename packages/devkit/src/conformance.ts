@@ -262,6 +262,7 @@ export async function runAdapterConformance(suite: AdapterConformanceSuite, ctx:
       body: happy.mandate.body,
       executionHash: happy.receipt.executionHash,
       signerSubject: evmAddressPartyRef(ctx.payer),
+      payerAccount: evmAddressPartyRef(ctx.payer), // self-pay: the signer is its own account
       receipt: (({ adapterProof: _p, ...header }) => header)(happy.receipt),
       now: ctx.evaluationTime,
       trustRoots: suite.trustRoots ?? {},

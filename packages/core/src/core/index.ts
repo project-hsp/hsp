@@ -21,9 +21,11 @@ export {
   canonicalParamsEncoding,
   requiredCapabilitiesHash,
   executionHash,
+  grantHash,
   receiptHash,
   preprocessInput,
   EXECUTION_FIELDS,
+  GRANT_FIELDS,
   RECEIPT_PREIMAGE_FIELDS,
   NESTED_TYPES,
 } from '../derivations.js';
@@ -38,5 +40,6 @@ export type {
   SignerInput,
   RecipientInput,
   PaymentExecutionInput,
+  DelegationGrantInput,
   ReceiptInput,
 } from '../derivations.js';

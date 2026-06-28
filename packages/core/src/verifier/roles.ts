@@ -38,11 +38,17 @@ export function roleFunction(
   mandate: SignedExecution,
   signerDecision: SignerDecision,
   policy: VerificationPolicy,
+  principalSubject?: PartyRef, // §3.4: delegated → payer = Principal; self-pay → omitted (payer = signer)
 ): RoleAssignment {
   const assignment: RoleAssignment = {
-    payer: signerDecision.resolvedSubject,
+    payer: principalSubject ?? signerDecision.resolvedSubject,
     payee: decodeRecipient(mandate.body.recipient),
   };
   if (policy.auditorSubject) assignment.auditor = policy.auditorSubject;
   return assignment;
+}
+
+/** PartyRef equality — scheme + case-insensitive id (§4.1.3). */
+export function partyRefEqual(a: PartyRef, b: PartyRef): boolean {
+  return a.scheme === b.scheme && a.id.toLowerCase() === b.id.toLowerCase();
 }

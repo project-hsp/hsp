@@ -100,15 +100,17 @@ export const evmTransferSchema: AdapterProofSchema = {
     // COMMITMENT recipients need a derivation/binding claim this plain-transfer schema
     // cannot make (§5.2 step 4) — fail closed.
     if (ctx.body.recipient.kind !== RecipientKind.ADDRESS) return fail('HSP-RCPT-PROOF');
-    // §5.2 step 4 signer↔sender binding: settlement-observed sender MUST be the mandate signer.
-    if (ctx.signerSubject.scheme !== 'evm-address') return fail('HSP-RCPT-PROOF');
-    let signerAddr: Address;
+    // §5.2 step 4 sender binding: the settlement-observed sender MUST be the payer's ACCOUNT
+    // (accountOf(principal) — the signer itself for self-pay, the smart account when delegated),
+    // never the Agent/signer and never tx.from.
+    if (ctx.payerAccount.scheme !== 'evm-address') return fail('HSP-RCPT-PROOF');
+    let payerAddr: Address;
     try {
-      signerAddr = getAddress(decodeAbiParameters([{ type: 'address' }], ctx.signerSubject.id)[0]);
+      payerAddr = getAddress(decodeAbiParameters([{ type: 'address' }], ctx.payerAccount.id)[0]);
     } catch {
       return fail('HSP-RCPT-PROOF');
     }
-    if (getAddress(o.from) !== signerAddr) return fail('HSP-RCPT-PROOF');
+    if (getAddress(o.from) !== payerAddr) return fail('HSP-RCPT-PROOF');
 
     return {
       ok: true,

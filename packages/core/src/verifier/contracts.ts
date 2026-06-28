@@ -96,7 +96,10 @@ export interface VerifyContext {
   proofBytes: Hex; // receipt.adapterProof
   body: PaymentExecution;
   executionHash: Hex;
-  signerSubject: PartyRef; // SignerDecision.resolvedSubject (verifier gated on granted=true)
+  signerSubject: PartyRef; // SignerDecision.resolvedSubject — the SIGNER (Agent when delegated)
+  payerAccount: PartyRef; // §4.1 accountOf(principal) — the on-chain account whose Transfer.from binds
+  //   (the Agent/signer for self-pay, the smart account when delegated). §5.2 step-4 sender binding
+  //   checks against THIS, never signerSubject or tx.from.
   receipt: ReceiptHeader;
   now: number; // Unix seconds; verifier-pinned
   trustRoots: AdapterTrustRoots;
