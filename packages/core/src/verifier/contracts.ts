@@ -58,7 +58,15 @@ export interface SignerProfile {
   readonly profileIdHash: Hex; // == keccak256(profileId); == Signer.profileId
   readonly description: SignerProfileDescription;
   decode(payload: Hex): PartyRef;
-  verify(payload: Hex, proof: Hex, executionHash: Hex, body: PaymentExecution): Promise<SignerDecision>;
+  // §4.1: the on-chain ACCOUNT whose value-moving operation (Transfer.from) binds the
+  // payer. For an EOA this equals decode(payload); for a smart account (erc1271.v1) it
+  // is the account address, NOT the agent/owner. §5.2 step 4 binds the settlement sender
+  // to accountOf(principalSubject).
+  accountOf(payload: Hex): PartyRef;
+  // verify a proof against the bound HSP typed-data digest — executionHash for a
+  // PaymentExecution signer, grantHash for a DelegationGrant principal (§5.1 step 4c-i).
+  // `body` is the execution context (unused by eoa/erc1271 profiles; reserved).
+  verify(payload: Hex, proof: Hex, digest: Hex, body: PaymentExecution): Promise<SignerDecision>;
   isStateStale?(signerStateHash: Hex, stateAnchor: SignerStateAnchor, now: number): boolean;
 }
 

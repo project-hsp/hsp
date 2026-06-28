@@ -52,6 +52,12 @@ export const eip712EoaSigner: SignerProfile = {
     return evmAddressPartyRef(address);
   },
 
+  // §4.1: an EOA is its own settlement account — accountOf == decode.
+  accountOf(payload: Hex): PartyRef {
+    const address = decodeAbiParameters([{ type: 'address' }], payload)[0];
+    return evmAddressPartyRef(address);
+  },
+
   async verify(payload: Hex, proof: Hex, executionHash: Hex, _body: PaymentExecution): Promise<SignerDecision> {
     let address: Address;
     try {
