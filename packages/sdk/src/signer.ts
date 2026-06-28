@@ -29,10 +29,14 @@ import {
 import { privateKeyToAccount } from 'viem/accounts';
 import {
   executionHash as computeMandateHash,
+  grantHash as computeGrantHash,
   EXECUTION_FIELDS,
+  GRANT_FIELDS,
   NESTED_TYPES,
   type DomainInput,
   type PaymentExecution,
+  type DelegationGrantInput,
+  type SignedDelegationGrant,
 } from '@hsp/core';
 import { signMandateHash } from '@hsp/core/profiles/signer/eip712-eoa';
 
@@ -112,6 +116,65 @@ export async function signPaymentExecution(
         params: [signer.address, JSON.stringify(td)],
       })) as Hex;
       return { executionHash: mh, signerProof: normalizeV(raw) };
+    }
+  }
+}
+
+/** EIP-712 typed data whose digest equals core grantHash(domain, grant) — mirrors
+ *  derivations.ts grantMessage so a wallet's eth_signTypedData_v4 reproduces the digest. */
+export function grantTypedData(domain: DomainInput, grant: DelegationGrantInput) {
+  return {
+    domain: {
+      name: domain.name,
+      version: domain.version,
+      chainId: Number(domain.chainId),
+      verifyingContract: domain.verifyingContract as Address,
+    },
+    types: { DelegationGrant: [...GRANT_FIELDS], Signer: NESTED_TYPES.Signer },
+    primaryType: 'DelegationGrant' as const,
+    message: {
+      principal: { profileId: grant.principal.profileId, payload: grant.principal.payload },
+      agent: { profileId: grant.agent.profileId, payload: grant.agent.payload },
+      onchainPermissionRef: grant.onchainPermissionRef,
+      payerRequiredCaps: grant.payerRequiredCaps,
+      payerAllowedCaps: grant.payerAllowedCaps,
+      notBefore: BigInt(grant.notBefore),
+      expiry: BigInt(grant.expiry),
+      nonce: grant.nonce,
+    } as unknown as Record<string, unknown>,
+  };
+}
+
+/**
+ * Sign a DelegationGrant as the PRINCIPAL (delegated payments). The principal is
+ * typically an erc1271 smart account whose OWNER key signs `grantHash` — the
+ * account's `isValidSignature` validates it on-chain at verify time. The signing
+ * mechanic is identical to signing an execution, only over `grantHash`.
+ */
+export async function signGrant(
+  principalSigner: HSPSigner,
+  domain: DomainInput,
+  grant: DelegationGrantInput,
+): Promise<SignedDelegationGrant> {
+  const gh = computeGrantHash(domain, grant);
+  switch (principalSigner.kind) {
+    case 'privateKey':
+      return { body: grant, principalProof: await signMandateHash(principalSigner.privateKey, gh) };
+    case 'viemAccount': {
+      if (!principalSigner.account.sign) throw new Error('viemAccount must be a local account exposing sign({ hash })');
+      return { body: grant, principalProof: await principalSigner.account.sign({ hash: gh }) };
+    }
+    case 'eip1193': {
+      const td = grantTypedData(domain, grant);
+      const digest = hashTypedData(td as Parameters<typeof hashTypedData>[0]);
+      if (digest.toLowerCase() !== gh.toLowerCase()) {
+        throw new Error('typed-data digest does not reproduce core grantHash — refusing to request a wallet signature');
+      }
+      const raw = (await principalSigner.provider.request({
+        method: 'eth_signTypedData_v4',
+        params: [principalSigner.address, JSON.stringify(td, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))],
+      })) as Hex;
+      return { body: grant, principalProof: normalizeV(raw) };
     }
   }
 }

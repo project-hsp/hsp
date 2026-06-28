@@ -36,11 +36,13 @@ import {
   canonicalizeCapSet,
   makeCap,
   executionHash as computeMandateHash,
+  grantHash as computeGrantHash,
   requiredCapabilitiesHash,
   type Attestation,
   type PaymentExecution,
   type Receipt,
   type SignedExecution,
+  type SignedDelegationGrant,
 } from '@hsp/core';
 import { capLabel } from '@hsp/core/policy/labels';
 import { chainDomain, type ChainConfig } from '@hsp/core/chains/index';
@@ -56,6 +58,7 @@ import {
   resolveComplianceCaps,
   mandateTypedData,
   eip3009TypedData,
+  buildDelegationGrant,
   type CompliancePolicyOpts,
   type Eip3009Authorization,
 } from '@hsp/sdk';
@@ -261,17 +264,33 @@ const TOOLS = [
     ),
   },
   {
+    name: 'hsp_build_grant',
+    description:
+      'Construct an UNSIGNED DelegationGrant + its grantHash (delegated payments, §2.1.1): a Principal smart account (erc1271) authorizing an Agent EOA to sign PaymentExecutions on its behalf. Signing is EXTERNAL (the Principal OWNER signs grantHash, e.g. via @hsp/sdk signGrant) — this tool never signs. Then build a delegated mandate with grantRef=grantHash (signer=the Agent) and submit it with the SignedDelegationGrant.',
+    inputSchema: A(
+      {
+        account: S('the Principal smart-account address (erc1271) whose funds move (0x…)'),
+        agent: S('the delegated Agent EVM address that will sign executions (0x…)'),
+        payerRequiredCaps: { type: 'array', description: 'optional payer-side FLOOR cap ids every execution MUST cover (0x…)' },
+        payerAllowedCaps: { type: 'array', description: 'optional payer-side CEILING cap ids the Agent may declare (0x…)' },
+        expiry: { type: 'number', description: 'optional unix seconds; default now + 24h' },
+      },
+      ['account', 'agent'],
+    ),
+  },
+  {
     name: 'hsp_build_mandate',
     description:
-      'Construct an UNSIGNED PaymentExecution + its executionHash for a payment intent (recipient, amount, token, deadline, capabilities). Signing is EXTERNAL (the payer signs the hash with their key, e.g. via @hsp/sdk) — this tool never signs and never moves money.',
+      'Construct an UNSIGNED PaymentExecution + its executionHash for a payment intent (recipient, amount, token, deadline, capabilities). Signing is EXTERNAL (the payer signs the hash with their key, e.g. via @hsp/sdk) — this tool never signs and never moves money. For a DELEGATED payment pass grantRef (from hsp_build_grant) and set signer = the Agent.',
     inputSchema: A(
       {
         to: S('recipient EVM address (0x…)'),
         amount: S('amount in token base units (decimal string)'),
         token: S('optional ERC-20 address; defaults to the chain-pinned stablecoin'),
-        signer: S('the payer EVM address (0x…) that will sign'),
+        signer: S('the EVM address (0x…) that will sign — the payer for self-pay, the Agent for a delegated payment'),
         deadline: { type: 'number', description: 'optional unix seconds; default now + 1h' },
         capabilities: { type: 'array', description: 'optional required capability ids (0x…)' },
+        grantRef: S('optional grantHash for a DELEGATED execution (from hsp_build_grant); omit for self-pay'),
       },
       ['to', 'amount', 'signer'],
     ),
@@ -307,6 +326,7 @@ const TOOLS = [
           description:
             'the signatures: { mandate: <0xsig>, settlement: <txHash for evm-transfer | { authorization, signature, facilitatorUrl, merchantDomain, tokenName, tokenVersion } for x402> }',
         },
+        grant: { type: 'object', description: 'optional SignedDelegationGrant (delegated payments) matching mandateBody.grantRef' },
       },
       ['paymentId', 'rail', 'mandateBody', 'signed'],
     ),
@@ -464,6 +484,23 @@ export function buildServer(deps: McpDeps): Server {
           });
         }
 
+        case 'hsp_build_grant': {
+          const grant = buildDelegationGrant({
+            account: getAddress(String(args.account)),
+            agent: getAddress(String(args.agent)),
+            chainId: deps.chain.chainId,
+            ...(args.payerRequiredCaps ? { payerRequiredCaps: args.payerRequiredCaps as Hex[] } : {}),
+            ...(args.payerAllowedCaps ? { payerAllowedCaps: args.payerAllowedCaps as Hex[] } : {}),
+            ...(args.expiry !== undefined ? { expiry: args.expiry as number } : {}),
+          });
+          const gh = computeGrantHash(chainDomain(deps.chain), grant);
+          return text({
+            grant,
+            grantHash: gh,
+            next: 'sign grantHash with the PRINCIPAL owner key (e.g. @hsp/sdk signGrant) → SignedDelegationGrant; then hsp_build_mandate with grantRef=grantHash (signer=the Agent) and hsp_submit_payment with that grant',
+          });
+        }
+
         case 'hsp_build_mandate': {
           const token = (args.token as Address | undefined) ?? deps.chain.stablecoin.address;
           const deadline = (args.deadline as number | undefined) ?? Math.floor(Date.now() / 1000) + 3600;
@@ -471,6 +508,7 @@ export function buildServer(deps: McpDeps): Server {
           const body: PaymentExecution = {
             nonce: toHex(keccak256(toHex(`${args.signer}:${args.to}:${args.amount}:${deadline}`))).slice(0, 66) as Hex,
             signer: { profileId: eip712EoaSigner.profileIdHash, payload: encodeAbiParameters([{ type: 'address' }], [getAddress(String(args.signer))]) },
+            ...(args.grantRef ? { grantRef: String(args.grantRef) as Hex } : {}),
             recipient: { kind: 0, payload: encodeAbiParameters([{ type: 'address' }], [getAddress(String(args.to))]) },
             token: getAddress(token),
             amount: String(args.amount),
@@ -545,7 +583,7 @@ export function buildServer(deps: McpDeps): Server {
             return text({ error: 'bad-mandate-signature', detail: `signature recovers to ${recovered}, expected payer ${payer}` }, true);
           }
           const mandate: SignedExecution = { body, signerProof: sig, requiredCapabilities: [] };
-          const reg = await coordHttp(deps, 'POST', '/payments', { chain: deps.chain.name, mandate, attestations: [] });
+          const reg = await coordHttp(deps, 'POST', '/payments', { chain: deps.chain.name, mandate, attestations: [], ...(args.grant ? { grant: args.grant as SignedDelegationGrant } : {}) });
           if (reg.status !== 200 && reg.status !== 201) return text({ error: 'register-failed', status: reg.status, detail: reg.json }, true);
 
           if (rail === 'x402') {

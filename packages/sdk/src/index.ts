@@ -19,13 +19,21 @@ export {
 } from '@hsp/core/policy/compliance';
 export {
   signPaymentExecution,
+  signGrant,
   signerAddress,
   mandateTypedData,
+  grantTypedData,
   eip3009TypedData,
   walletClientFor,
   type HSPSigner,
   type Eip3009Authorization,
 } from './signer.js';
+export {
+  buildDelegationGrant,
+  erc1271OwnerExecutor,
+  type AccountExecutor,
+  type BuildDelegationGrantOpts,
+} from './delegation.js';
 export { fetchRequirements, buildPaymentRequest, type MandateRequirements, type PaymentRequest } from './requirements.js';
 export { assertDeployment, DeploymentMismatchError, type ExpectedTrust } from './assert.js';
 export {

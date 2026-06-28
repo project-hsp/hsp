@@ -22,7 +22,7 @@ import {
   type Hex,
 } from 'viem';
 import { encodeAbiParameters } from 'viem';
-import { requiredCapabilitiesHash, type Attestation, type PaymentExecution, type SignedExecution } from '@hsp/core';
+import { grantHash, requiredCapabilitiesHash, type Attestation, type PaymentExecution, type SignedExecution, type SignedDelegationGrant } from '@hsp/core';
 import { eip712EoaSigner } from '@hsp/core/profiles/signer/eip712-eoa';
 import { resolveComplianceCaps, type ComplianceTag } from '@hsp/core/policy/compliance';
 import { toCaip2 } from '@hsp/core/x402/index';
@@ -36,6 +36,7 @@ import {
   type Eip3009Authorization,
 } from './signer.js';
 import type { PaymentRequest } from './requirements.js';
+import type { AccountExecutor } from './delegation.js';
 
 const ERC20_ABI = parseAbi(['function transfer(address to, uint256 amount) returns (bool)']);
 
@@ -126,8 +127,12 @@ export class HSPClient {
     return { mandate: { body, signerProof, requiredCapabilities: p.capabilities ?? [] }, executionHash };
   }
 
-  async register(mandate: SignedExecution, attestations: Attestation[] = []): Promise<{ paymentId: Hex; status: string }> {
-    const r = await this.http('POST', '/payments', { chain: this.chainName, mandate, attestations });
+  async register(
+    mandate: SignedExecution,
+    attestations: Attestation[] = [],
+    grant?: SignedDelegationGrant,
+  ): Promise<{ paymentId: Hex; status: string }> {
+    const r = await this.http('POST', '/payments', { chain: this.chainName, mandate, attestations, ...(grant ? { grant } : {}) });
     if (r.status !== 200 && r.status !== 201) {
       throw new Error(`register failed: HTTP ${r.status} ${JSON.stringify(r.json)}`);
     }
@@ -231,6 +236,53 @@ export class HSPClient {
     });
     const obs = await this.observe(reg.paymentId, txHash);
     void executionHash;
+    return {
+      paymentId: reg.paymentId,
+      txHash,
+      status: obs.status,
+      mandate,
+      awaitSettled: (o) => this.awaitTerminal(reg.paymentId, o),
+    };
+  }
+
+  /**
+   * Delegated payment (HSP.md §2.1.1): THIS client's signer is the AGENT. The Principal
+   * (an erc1271 smart account) must have pre-signed the `grant` (see signGrant); the Agent
+   * signs the execution with `grantRef = grantHash(grant)`, the Coordinator stores the grant
+   * and verifies the delegation, and the Principal's ACCOUNT settles via `executor` so the
+   * on-chain `Transfer.from` is the account. Returns the same PayHandle as `pay()`.
+   */
+  async payDelegated(p: {
+    to: Address;
+    amount: bigint;
+    grant: SignedDelegationGrant;
+    /** The Principal smart account whose funds move (== the grant's principal account). */
+    account: Address;
+    /** Settles account.execute(transfer) so Transfer.from = the account (see delegation.ts). */
+    executor: AccountExecutor;
+    token?: Address;
+    deadline?: number;
+    capabilities?: Hex[];
+    nonce?: Hex;
+    attestations?: Attestation[];
+  }): Promise<PayHandle> {
+    const domain = chainDomain(this.opts.chain);
+    const grantRef = grantHash(domain, p.grant.body);
+    const base = this.buildPaymentExecution({
+      to: p.to,
+      amount: p.amount,
+      ...(p.token ? { token: p.token } : {}),
+      ...(p.deadline !== undefined ? { deadline: p.deadline } : {}),
+      ...(p.capabilities ? { capabilities: p.capabilities } : {}),
+      ...(p.nonce ? { nonce: p.nonce } : {}),
+    });
+    const body: PaymentExecution = { ...base, grantRef };
+    const { signerProof } = await signPaymentExecution(this.opts.signer, domain, body);
+    const mandate: SignedExecution = { body, signerProof, requiredCapabilities: p.capabilities ?? [] };
+    const reg = await this.register(mandate, p.attestations ?? [], p.grant);
+    // the Principal account moves the funds — Transfer.from = the account, not the agent
+    const txHash = await p.executor.execute({ account: p.account, token: body.token, to: p.to, amount: p.amount });
+    const obs = await this.observe(reg.paymentId, txHash);
     return {
       paymentId: reg.paymentId,
       txHash,
