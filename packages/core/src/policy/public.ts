@@ -52,7 +52,7 @@ export function buildPublicPolicy(
 }
 
 // =============================================================================
-// §7.7 MandateRequirements advertisement (format normative — HSP.md §7.7)
+// §7.7 PayeeRequirement advertisement (format normative — HSP.md §7.7)
 // =============================================================================
 
 /** Deterministic JSON (recursively sorted object keys) for content hashing. */
@@ -64,7 +64,7 @@ export function stableStringify(value: unknown): string {
   return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(rec[k])}`).join(',')}}`;
 }
 
-export interface MandateRequirements {
+export interface PayeeRequirement {
   hspVersion: string;
   policyHash: Hex; // §7.5 content hash — cache/version key ONLY, never a trust anchor
   expiresAt: number; // soft expiry; payer should re-fetch past this
@@ -97,11 +97,11 @@ export function buildPublicRequirements(
     expiresAt: number;
     policyRequiredCapabilities?: string[];
     offeredCapabilities?: string[];
-    issuers?: MandateRequirements['issuers'];
+    issuers?: PayeeRequirement['issuers'];
     /** Additional adapters the deployment admits (§7.7 completeness). */
-    extraAdapters?: MandateRequirements['adapters'];
+    extraAdapters?: PayeeRequirement['adapters'];
   },
-): MandateRequirements {
+): PayeeRequirement {
   const core = {
     hspVersion: '1',
     domain: { verifyingContract: chain.verifyingContract, chainIds: [chain.chainId] },
@@ -109,7 +109,7 @@ export function buildPublicRequirements(
     policyRequiredCapabilities: opts.policyRequiredCapabilities ?? [],
     offeredCapabilities: opts.offeredCapabilities ?? [],
     issuers: opts.issuers ?? {},
-    contextBindingScope: {} as MandateRequirements['contextBindingScope'],
+    contextBindingScope: {} as PayeeRequirement['contextBindingScope'],
     adapters: [
       {
         adapterId: 'adapter:evm-transfer',

@@ -10,7 +10,7 @@
 import { getAddress, type Address, type Hex } from 'viem';
 import { evmIssuerKeyId } from '@hsp/core/attestation/issuer';
 import type { ComplianceFamily } from '@hsp/core/policy/compliance';
-import { fetchRequirements, type MandateRequirements } from './requirements.js';
+import { fetchRequirements, type PayeeRequirement } from './requirements.js';
 
 export interface ExpectedTrust {
   /** A §7.7 policyHash you have vetted — the live policyHash MUST equal it (a content
@@ -40,14 +40,14 @@ interface ChainsEntry {
 /**
  * Fetch a deployment's advertised config (/requirements + /chains) and ASSERT it matches
  * `expected`. Throws DeploymentMismatchError listing every divergence; on success returns
- * the advertised MandateRequirements (now vetted). Pin from values you trust, not from
+ * the advertised PayeeRequirement (now vetted). Pin from values you trust, not from
  * whatever the deployment happens to advertise.
  */
 export async function assertDeployment(
   coordinatorUrl: string,
   chain: string,
   expected: ExpectedTrust,
-): Promise<MandateRequirements> {
+): Promise<PayeeRequirement> {
   const base = coordinatorUrl.replace(/\/$/, '');
   const req = await fetchRequirements(coordinatorUrl, chain);
   const mismatches: string[] = [];

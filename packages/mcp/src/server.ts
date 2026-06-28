@@ -10,8 +10,8 @@
  *   hsp_inspect          — decode a mandate / receipt / attestation into plain fields
  *   hsp_capability       — resolve verb:object:version[params] → id + meaning, or list the vocabulary
  *   hsp_capability_diff  — required vs satisfied capability sets → what's missing
- *   hsp_build_requirements — emit a §7.7 MandateRequirements (what a payee advertises)
- *   hsp_check_requirements — does a mandate satisfy a given MandateRequirements?
+ *   hsp_build_requirements — emit a §7.7 PayeeRequirement (what a payee advertises)
+ *   hsp_check_requirements — does a mandate satisfy a given PayeeRequirement?
  *   hsp_build_mandate    — construct an UNSIGNED Mandate + its mandateHash (signing is external)
  */
 
@@ -50,7 +50,7 @@ import { eip712EoaSigner } from '@hsp/core/profiles/signer/eip712-eoa';
 import { EVM_TRANSFER_ADAPTER_ID, decodeTransferProof } from '@hsp/core/adapter/mock-evm-transfer';
 import { X402_ADAPTER_ID, x402InstanceKey } from '@hsp/core/adapter/x402';
 import { decodeX402ExactProof } from '@hsp/core/adapter/x402-exact';
-import { buildPublicRequirements, type MandateRequirements } from '@hsp/core/policy/public';
+import { buildPublicRequirements, type PayeeRequirement } from '@hsp/core/policy/public';
 import { buildComplianceRequirements } from '@hsp/core/policy/compliance';
 import { toCaip2 } from '@hsp/core/x402/index';
 import {
@@ -243,7 +243,7 @@ const TOOLS = [
   {
     name: 'hsp_build_requirements',
     description:
-      'Emit a §7.7 MandateRequirements object — what a PAYEE/deployment advertises it requires (policyHash, domain, signer profiles, required/offered capabilities, trusted issuers, admitted adapters). mode "public" = empty policy; mode "compliance" = requires the given KYC/sanctions issuers.',
+      'Emit a §7.7 PayeeRequirement object — what a PAYEE/deployment advertises it requires (policyHash, domain, signer profiles, required/offered capabilities, trusted issuers, admitted adapters). mode "public" = empty policy; mode "compliance" = requires the given KYC/sanctions issuers.',
     inputSchema: A({
       mode: S("'public' (default) | 'compliance'"),
       compliance: { type: 'array', description: 'for mode=compliance: tags to require, e.g. ["kyc","sanctions"]' },
@@ -254,11 +254,11 @@ const TOOLS = [
   {
     name: 'hsp_check_requirements',
     description:
-      'Pre-flight: does a (proposed) mandate satisfy a given §7.7 MandateRequirements? Checks the mandate covers the deployment’s policyRequiredCapabilities and targets a supported domain/chain. Returns ok + what is missing — call this BEFORE paying.',
+      'Pre-flight: does a (proposed) mandate satisfy a given §7.7 PayeeRequirement? Checks the mandate covers the deployment’s policyRequiredCapabilities and targets a supported domain/chain. Returns ok + what is missing — call this BEFORE paying.',
     inputSchema: A(
       {
         mandate: { type: 'object', description: 'the SignedMandate (or its body) JSON' },
-        requirements: { type: 'object', description: 'a MandateRequirements JSON (from hsp_build_requirements or a deployment’s GET /requirements)' },
+        requirements: { type: 'object', description: 'a PayeeRequirement JSON (from hsp_build_requirements or a deployment’s GET /requirements)' },
       },
       ['mandate', 'requirements'],
     ),
@@ -446,7 +446,7 @@ export function buildServer(deps: McpDeps): Server {
 
         case 'hsp_build_requirements': {
           const expiresAt = Math.floor(Date.now() / 1000) + 3600;
-          let req: MandateRequirements;
+          let req: PayeeRequirement;
           if (args.mode === 'compliance') {
             const tags = (args.compliance as string[] | undefined) ?? ['kyc', 'sanctions'];
             const addrs = [
@@ -468,7 +468,7 @@ export function buildServer(deps: McpDeps): Server {
         }
 
         case 'hsp_check_requirements': {
-          const req = args.requirements as MandateRequirements;
+          const req = args.requirements as PayeeRequirement;
           const m = args.mandate as SignedMandate;
           const have = new Set((m.requiredCapabilities ?? []).map((x) => x.toLowerCase()));
           const missing = (req.policyRequiredCapabilities ?? []).filter((id) => !have.has(id.toLowerCase()));

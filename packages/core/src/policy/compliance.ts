@@ -15,7 +15,7 @@ import { evmIssuerKeyId } from '../attestation/issuer.js';
 import { KYC_SCHEMA_ID, SANCTIONS_SCHEMA_ID } from '../attestation/schemas.js';
 import type { TrustAnchor, VerificationPolicy } from '../verifier/contracts.js';
 import type { ChainConfig } from '../chains/index.js';
-import { buildPublicPolicy, buildPublicRequirements, type MandateRequirements } from './public.js';
+import { buildPublicPolicy, buildPublicRequirements, type PayeeRequirement } from './public.js';
 
 // Payer-roled compliance caps — the fixed v1 vocabulary this deployment understands.
 export const KYC_FULL: ParsedCapability = makeCap('attests:kyc:v1', { level: 'full' }, Roles.payer);
@@ -93,9 +93,9 @@ export function buildCompliancePolicy(
 /** §7.7 projection of a compliance deployment (issuers + the declared floor). */
 export function buildComplianceRequirements(
   chain: ChainConfig,
-  opts: { expiresAt: number; extraAdapters?: MandateRequirements['adapters']; extraOffered?: string[] } & CompliancePolicyOpts,
-): MandateRequirements {
-  const issuers: MandateRequirements['issuers'] = {};
+  opts: { expiresAt: number; extraAdapters?: PayeeRequirement['adapters']; extraOffered?: string[] } & CompliancePolicyOpts,
+): PayeeRequirement {
+  const issuers: PayeeRequirement['issuers'] = {};
   for (const ti of opts.trustedIssuers) {
     const k = ti.family; // human family id; payer strips role + matches by base (§2.3.1)
     (issuers[k] ??= []).push({

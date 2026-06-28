@@ -26,7 +26,7 @@ A capability is `verb:object:version[params]`; the verifier compares sets byte-f
 ## What a deployment requires (§7.7)
 
 - `hsp_build_requirements {mode: "public" | "compliance", compliance?, issuerAddress?}` →
-  emit a MandateRequirements object — what a payee/deployment advertises it requires.
+  emit a PayeeRequirement object — what a payee/deployment advertises it requires.
 - `hsp_check_requirements {mandate, requirements}` → **pre-flight, BEFORE paying**: does this
   mandate cover the deployment's `policyRequiredCapabilities` + a supported chain? Returns
   `ok` + exactly what is missing, so the payer can fix the mandate first.

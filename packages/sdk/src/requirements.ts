@@ -2,7 +2,7 @@
  * Discovery + the envelope layer.
  *
  * Two objects, deliberately distinct (HSP.md §7.7 + HSP-bindings §3):
- *  - MandateRequirements — the verifier/Coordinator's §7.7 advertisement
+ *  - PayeeRequirement — the verifier/Coordinator's §7.7 advertisement
  *    (NORMATIVE format; policy projection; carries NO amount). Re-exported
  *    from @hsp/core.
  *  - PaymentRequest — a single invoice ("pay me X"): delivery-envelope layer,
@@ -11,10 +11,10 @@
  */
 
 import type { Address } from 'viem';
-import type { MandateRequirements } from '@hsp/core/policy/public';
+import type { PayeeRequirement } from '@hsp/core/policy/public';
 import type { ChainConfig } from '@hsp/core/chains/index';
 
-export type { MandateRequirements };
+export type { PayeeRequirement };
 
 export interface PaymentRequest {
   to: Address;
@@ -23,7 +23,7 @@ export interface PaymentRequest {
   chainId: number;
   /** Coordinator chain-registry name (e.g. 'hashkey', 'anvil-dev'). */
   chain?: string;
-  requirements?: MandateRequirements;
+  requirements?: PayeeRequirement;
 }
 
 /**
@@ -34,7 +34,7 @@ export interface PaymentRequest {
  */
 export function buildPaymentRequest(
   chain: ChainConfig,
-  p: { to: Address; amount: bigint; token?: Address; requirements?: MandateRequirements },
+  p: { to: Address; amount: bigint; token?: Address; requirements?: PayeeRequirement },
 ): PaymentRequest {
   const req: PaymentRequest = {
     to: p.to,
@@ -47,8 +47,8 @@ export function buildPaymentRequest(
   return req;
 }
 
-export async function fetchRequirements(coordinatorUrl: string, chain: string): Promise<MandateRequirements> {
+export async function fetchRequirements(coordinatorUrl: string, chain: string): Promise<PayeeRequirement> {
   const res = await fetch(`${coordinatorUrl.replace(/\/$/, '')}/requirements?chain=${encodeURIComponent(chain)}`);
   if (!res.ok) throw new Error(`requirements fetch failed: HTTP ${res.status}`);
-  return (await res.json()) as MandateRequirements;
+  return (await res.json()) as PayeeRequirement;
 }

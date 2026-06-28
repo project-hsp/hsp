@@ -34,7 +34,7 @@ export {
   type AccountExecutor,
   type BuildDelegationGrantOpts,
 } from './delegation.js';
-export { fetchRequirements, buildPaymentRequest, type MandateRequirements, type PaymentRequest } from './requirements.js';
+export { fetchRequirements, buildPaymentRequest, type PayeeRequirement, type PaymentRequest } from './requirements.js';
 export { assertDeployment, DeploymentMismatchError, type ExpectedTrust } from './assert.js';
 export {
   x402Gate,

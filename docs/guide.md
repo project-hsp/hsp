@@ -261,7 +261,7 @@ sandbox). An empty key list means open dev mode (the server warns at startup).
 | `GET /explorer` | — | Explorer UI; deep-link `/explorer?id=0x<paymentId>` |
 | `GET /healthz` | — | liveness: `{ ok: true }` |
 | `GET /chains` | — | chain registry: name, chainId, stablecoin, confirmations, verifyingContract, instanceKey, **adapterAddress (pin this)** |
-| `GET /requirements?chain=<name>` | — | the §7.7 `MandateRequirements` projection — everything a passing mandate must satisfy (signer profiles, policy-floor capabilities, trusted issuers, adapters + reorg policies, domain constants). Build mandates from this, not from guesswork. |
+| `GET /requirements?chain=<name>` | — | the §7.7 `PayeeRequirement` projection — everything a passing mandate must satisfy (signer profiles, policy-floor capabilities, trusted issuers, adapters + reorg policies, domain constants). Build mandates from this, not from guesswork. |
 | `GET /stats` | — | public aggregates: `{ byChainStatus: [{chain, status, count}], totalPayments }` |
 | `GET /payments?status=&chain=&limit=&offset=` | Bearer | detail list (capped at 200/page) |
 | `POST /payments` | Bearer | register: `{ chain, mandate: SignedMandate, attestations?: Attestation[] }` → `201` (or `200` with `existing: true`) `{ paymentId, status }` |
@@ -506,8 +506,8 @@ Ten tools:
 | `hsp_inspect` | decode a mandate / receipt / attestation into plain, labelled fields (amount, recipient, token, deadline, the decoded proof, who signed what). Read-only — no verification. |
 | `hsp_capability` | resolve `verb:object:version[params]` → canonical id + meaning; with no args, list the baseline capability vocabulary (`proves:*` / `attests:*` / `hides:*` / `discloses:*`). |
 | `hsp_capability_diff` | compare a required vs satisfied capability set (canonicalized, the verifier rule) → what's missing to close the gap. |
-| `hsp_build_requirements` | emit a §7.7 `MandateRequirements` (what a payee/deployment advertises). `mode: public` (empty policy) \| `compliance` (requires the given KYC/sanctions issuers). |
-| `hsp_check_requirements` | pre-flight: does a mandate satisfy a given `MandateRequirements`? (covers the policy floor + a supported chain) — call before paying. |
+| `hsp_build_requirements` | emit a §7.7 `PayeeRequirement` (what a payee/deployment advertises). `mode: public` (empty policy) \| `compliance` (requires the given KYC/sanctions issuers). |
+| `hsp_check_requirements` | pre-flight: does a mandate satisfy a given `PayeeRequirement`? (covers the policy floor + a supported chain) — call before paying. |
 | `hsp_build_mandate` | construct an **UNSIGNED** `MandateBody` + its `mandateHash`. Signing is external (the payer signs with their key, e.g. via a wallet MCP or `@hsp/sdk`); this tool never signs and never moves money. |
 | `hsp_prepare_payment` | prepare a payment: register the mandate and return the **UNSIGNED** things to sign as `toSign[]`, in **standard wallet-RPC shapes** — the HSP mandate (`eth_signTypedData_v4`) + the settlement (`eth_sendTransaction` for evm-transfer; EIP-3009 `eth_signTypedData_v4` for x402). **Signs nothing** — route `toSign[]` to a wallet MCP / wallet. |
 | `hsp_submit_payment` | relay the **externally-signed** mandate + settlement to the Coordinator. Re-verifies the signature first (a tampered body is rejected), observes the settlement, and returns the verified status (`SETTLED`). Holds no key — only a Coordinator write key. |
