@@ -15,6 +15,7 @@
       "type": "string",
       "enum": [
         "executionHash",
+        "grantHash",
         "receiptHash",
         "requiredCapabilitiesHash",
         "capabilityId"

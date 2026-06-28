@@ -246,6 +246,61 @@ export function executionHash(domain: DomainInput, body: PaymentExecutionInput):
 }
 
 // =============================================================================
+// EIP-712: grantHash   HSP.md §2.4.1a (delegated payments)
+//   The Principal signs grantHash; PaymentExecution.grantRef commits to it.
+//   GRANT_TYPEHASH covers every field EXCEPT principalProof (envelope-only, §2.1.1).
+// =============================================================================
+
+export interface DelegationGrantInput {
+  principal: SignerInput;          // account/fund owner; typically erc1271.v1 (a smart account)
+  agent: SignerInput;              // the identity authorized to sign PaymentExecutions
+  onchainPermissionRef: Hex;       // bytes32 — ERC-7715 permissionId / ERC-4337 session-key ref
+  payerRequiredCaps: Hex[];        // payer-side FLOOR every execution MUST cover
+  payerAllowedCaps: Hex[];         // payer-side CEILING the Agent may declare
+  notBefore: number;
+  expiry: number;
+  nonce: Hex;
+}
+
+// DelegationGrant field order — MUST match HSP.md §2.4.1a GRANT_TYPEHASH.
+// Only `Signer` is a referenced struct (bytes32[] arrays carry no nested type).
+export const GRANT_FIELDS = [
+  { name: 'principal', type: 'Signer' },
+  { name: 'agent', type: 'Signer' },
+  { name: 'onchainPermissionRef', type: 'bytes32' },
+  { name: 'payerRequiredCaps', type: 'bytes32[]' },
+  { name: 'payerAllowedCaps', type: 'bytes32[]' },
+  { name: 'notBefore', type: 'uint64' },
+  { name: 'expiry', type: 'uint64' },
+  { name: 'nonce', type: 'bytes32' },
+] as const;
+
+function grantMessage(g: DelegationGrantInput): Record<string, unknown> {
+  return {
+    principal: { profileId: g.principal.profileId, payload: g.principal.payload },
+    agent: { profileId: g.agent.profileId, payload: g.agent.payload },
+    onchainPermissionRef: g.onchainPermissionRef,
+    payerRequiredCaps: g.payerRequiredCaps,
+    payerAllowedCaps: g.payerAllowedCaps,
+    notBefore: BigInt(g.notBefore),
+    expiry: BigInt(g.expiry),
+    nonce: g.nonce,
+  };
+}
+
+export function grantHash(domain: DomainInput, grant: DelegationGrantInput): Hex {
+  return hashTypedData({
+    domain,
+    types: {
+      DelegationGrant: [...GRANT_FIELDS],
+      Signer: NESTED_TYPES.Signer,
+    },
+    primaryType: 'DelegationGrant',
+    message: grantMessage(grant),
+  } as unknown as HashTypedDataArgs);
+}
+
+// =============================================================================
 // receiptHash   HSP.md §2.4.2
 //   EIP-712 typed-data digest over RECEIPT_PREIMAGE_TYPEHASH; the adapter signs it
 //   (Receipt.adapterSignature). Same EIP-712 domain as the mandate (§5.2 step 2).

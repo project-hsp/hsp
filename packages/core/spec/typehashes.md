@@ -9,10 +9,9 @@ Keep this in sync with HSP.md whenever a wire-format change lands — see the
 repo-split plan, "协议修改 SOP" (B-class / wire change).
 
 Delegation refactor (v-next): `PaymentExecution` is 11 fields (v0 `MandateBody`
-was 8; `grantRef`/`requirementRef`/`settlementBinding` added), and
-`ReceiptPreimage` renames `mandateHash` → `executionHash`. `GRANT_TYPEHASH`
-(DelegationGrant) lands with the impl's delegation stage (Stage 2); until then the
-impl only signs/verifies `PaymentExecution` + `ReceiptPreimage`.
+was 8; `grantRef`/`requirementRef`/`settlementBinding` added), `ReceiptPreimage`
+renames `mandateHash` → `executionHash`, and `GRANT_TYPEHASH` (DelegationGrant,
+§2.4.1a) is added for delegated payments — the Principal signs `grantHash`.
 
 EXECUTION_TYPEHASH = keccak256(
   "PaymentExecution("
@@ -29,6 +28,20 @@ EXECUTION_TYPEHASH = keccak256(
     "bytes32 requiredCapabilitiesHash"
   ")"
   "Recipient(uint8 kind,bytes payload)"
+  "Signer(bytes32 profileId,bytes payload)"
+)
+
+GRANT_TYPEHASH = keccak256(
+  "DelegationGrant("
+    "Signer principal,"
+    "Signer agent,"
+    "bytes32 onchainPermissionRef,"
+    "bytes32[] payerRequiredCaps,"
+    "bytes32[] payerAllowedCaps,"
+    "uint64 notBefore,"
+    "uint64 expiry,"
+    "bytes32 nonce"
+  ")"
   "Signer(bytes32 profileId,bytes payload)"
 )
 

@@ -1,0 +1,49 @@
+{
+  "spec_section": "HSP.md §2.4.1a",
+  "derivation": "grantHash",
+  "_note": "DelegationGrant signed by the Principal (delegated payments, §2.1.1). GRANT_TYPEHASH = 0xaae0d2958e179bd6c34e7ecdc6963aaf600800a686d414710fa47079c46e07bf (see typehashes.md); the typed-data covers all fields EXCEPT principalProof (envelope-only). bytes32[] fields encode per EIP-712.",
+  "vectors": [
+    {
+      "id": "agent-grant-erc1271-principal",
+      "description": "An erc1271.v1 smart-account Principal grants an eip712-eoa.v1 Agent: payer-side floor (disclose) + ceiling (kyc, disclose), an on-chain permission ref, and a validity window.",
+      "spec_refs": [
+        "HSP.md §2.1.1 DelegationGrant",
+        "HSP.md §2.4.1a grantHash",
+        "HSP.md §4.1.5 erc1271.v1"
+      ],
+      "input": {
+        "domain": {
+          "name": "HSP",
+          "version": "1",
+          "chainId": 8453,
+          "verifyingContract": "0x0000000000000000000000000000000000000001"
+        },
+        "grant": {
+          "principal": {
+            "profileId": "0x8469a3d7c35f8a4141a487b7b0d505b03690527f142e8c3d4871a977bfd81aba",
+            "_profileId_note": "keccak256(\"erc1271.v1\")",
+            "payload": "0x000000000000000000000000acc0acc0acc0acc0acc0acc0acc0acc0acc0acc00000000000000000000000000000000000000000000000000000000000002105",
+            "_payload_note": "abi.encode(address smartAccount=0xacc0…acc0, uint256 chainId=8453)"
+          },
+          "agent": {
+            "profileId": "0xd4fe0bde3910ed200206b4932a6ac949285964040c11741d6a19cbfb486cb03f",
+            "_profileId_note": "keccak256(\"eip712-eoa.v1\")",
+            "payload": "0x000000000000000000000000a9e9a9e9a9e9a9e9a9e9a9e9a9e9a9e9a9e9a9e9"
+          },
+          "onchainPermissionRef": "0x7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e",
+          "payerRequiredCaps": ["0xcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcb"],
+          "payerAllowedCaps": [
+            "0xcacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacaca",
+            "0xcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcb"
+          ],
+          "notBefore": 1714000000,
+          "expiry": 1714600000,
+          "nonce": "0xa9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9"
+        }
+      },
+      "expected_output": {
+        "hash": "0xdfaa01a5bdc2cc99ceadf4c78f74f6f6cba56d5fdb52bf49a6f2dc73ae944dc0"
+      }
+    }
+  ]
+}

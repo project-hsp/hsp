@@ -13,6 +13,7 @@ import type {
   SignerInput,
   RecipientInput,
   PaymentExecutionInput,
+  DelegationGrantInput,
   ReceiptInput,
 } from '../derivations.js';
 
@@ -40,6 +41,15 @@ export interface SignedExecution {
   body: PaymentExecution;
   signerProof: Hex; // SignerProfile-defined; verified against executionHash (§5.1 step 4)
   requiredCapabilities: Hex[]; // canonical cap-id set; wire order/dupes tolerated (§3.1.3 / §5.1 step 3)
+}
+
+/** §2.1.1 DelegationGrant — Principal-signed authorization of an Agent (delegated payments). */
+export type DelegationGrant = DelegationGrantInput;
+
+/** §2.1.1 SignedDelegationGrant envelope — only `body` is EIP-712 signed; principalProof is envelope-only. */
+export interface SignedDelegationGrant {
+  body: DelegationGrant;
+  principalProof: Hex; // SignerProfile-defined; verified against grantHash (§5.1 step 4c-i)
 }
 
 // =============================================================================

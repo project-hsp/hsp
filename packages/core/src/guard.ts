@@ -20,6 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   EXECUTION_FIELDS,
+  GRANT_FIELDS,
   RECEIPT_PREIMAGE_FIELDS,
   NESTED_TYPES,
 } from './derivations.js';
@@ -87,6 +88,7 @@ export interface GuardFailure {
 
 const CHECKS = [
   { name: 'EXECUTION_TYPEHASH', primary: 'PaymentExecution', fields: EXECUTION_FIELDS },
+  { name: 'GRANT_TYPEHASH', primary: 'DelegationGrant', fields: GRANT_FIELDS },
   { name: 'RECEIPT_PREIMAGE_TYPEHASH', primary: 'ReceiptPreimage', fields: RECEIPT_PREIMAGE_FIELDS },
 ] as const;
 

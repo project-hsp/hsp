@@ -12,11 +12,13 @@ import {
   capabilityId,
   requiredCapabilitiesHash,
   executionHash,
+  grantHash,
   receiptHash,
   preprocessInput,
   type CapabilityIdInput,
   type DomainInput,
   type PaymentExecutionInput,
+  type DelegationGrantInput,
   type ReceiptInput,
 } from '@hsp/core/derivations';
 import type { Hex } from 'viem';
@@ -85,6 +87,10 @@ export function runDerivation(derivation: string, rawInput: Record<string, unkno
     }
     case 'executionHash': {
       const hash = executionHash(input['domain'] as DomainInput, input['body'] as PaymentExecutionInput);
+      return { hash };
+    }
+    case 'grantHash': {
+      const hash = grantHash(input['domain'] as DomainInput, input['grant'] as DelegationGrantInput);
       return { hash };
     }
     case 'receiptHash': {
