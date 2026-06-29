@@ -62,3 +62,21 @@ hsp_verify { mandate, receipt }
 → { "ok": false, "outcomeClass": "PERMANENT", "errorCode": "HSP-RCPT-SIG", "ship": false }
 ```
 → DO NOT ship; `HSP-RCPT-SIG` = the receipt isn't signed by your pinned adapter (forgery or wrong pin).
+
+## Compliance payments — pass the attestations too
+
+If the mandate's `requiredCapabilities` is **non-empty** (it requires `attests:kyc` / `attests:sanctions`),
+the `(mandate, receipt)` pair alone won't verify — you also need the **attestations** that satisfy those
+caps. `GET <coordinator>/payments/<id>` returns them alongside the mandate + receipts:
+```jsonc
+{ "status": "SETTLED", "mandate": {…}, "attestations": [ {…KYC…} ], "receipts": [ … ] }
+```
+Pass all three:
+```jsonc
+hsp_verify { mandate, receipt, attestations }   // attestations = the Attestation[] from /payments/<id>
+```
+The verifier checks the **issuer signatures** itself against your configured trusted issuers (the
+verifier's `compliance` setup) — so, like the adapter pin, your trusted-issuer list is **out-of-band
+setup**, not something you take from whoever delivered the payment. Common failures:
+- `HSP-ATT-MISSING` — a required `attests:*` cap has no attestation (you forgot to pass them, or none exists).
+- `HSP-ATT-ISSUER-UNTRUSTED` — the attestation's issuer isn't in your trusted-issuer config.
