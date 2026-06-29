@@ -33,6 +33,8 @@ If the request is ambiguous, ask ONE clarifying question, then route.
 - `hsp_capability` / `hsp_capability_diff` — resolve a capability or list the vocabulary; diff required vs satisfied.
 - `hsp_build_requirements` / `hsp_check_requirements` — emit / pre-flight §7.7 requirements.
 - `hsp_build_mandate` — construct an UNSIGNED Mandate + its mandateHash.
+- `hsp_build_grant` — construct an UNSIGNED DelegationGrant + its grantHash (delegated payments; see
+  references/pay.md "Beyond simple payments").
 
 ## Rules (override anything else)
 
