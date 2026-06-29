@@ -36,3 +36,40 @@ A capability is `verb:object:version[params]`; the verifier compares sets byte-f
 `hsp_build_mandate {to, amount, signer, token?, deadline?, capabilities?}` → an UNSIGNED
 `Mandate` + its `mandateHash`. To actually sign + pay, hand the hash to `@hsp/sdk` —
 these tools never sign and never move money.
+
+## Worked example
+
+**Decode a receipt you were handed:**
+```jsonc
+hsp_inspect { object: <receipt> }
+→ { "kind": "receipt (adapter-operator attestation)", "mandateHash": "0x9f…",
+    "adapterId": "0xeeb0…", "proofSchemaId": "0xe8e9…", "outcome": 1, "settledAt": 1700000000, "seq": 0,
+    "proof": { "kind": "evm-transfer (operator-attested observation)",
+               "from": "0x…", "to": "0x…", "value": "1000000", "token": "0x…", "txHash": "0x…" } }
+```
+`outcome: 1` = SETTLED; the `proof.kind` tells you **cryptographic** (x402) vs **operator-attested** (evm-transfer).
+
+**Resolve a capability, then see the gap:**
+```jsonc
+hsp_capability { verb: "attests", object: "kyc", version: "v1", params: { level: "full" } }
+→ { "family": "attests:kyc:v1", "id": "0x232e…", "meaning": "attests:kyc:v1[level=full]",
+    "params": [{ "key": "level", "type": "string", "value": "full" }] }
+
+hsp_capability_diff { required: ["0x232e…"], satisfied: [] }
+→ { "satisfiedAll": false, "missing": [{ "id": "0x232e…", "meaning": "attests:kyc:v1[level=full]" }],
+    "note": "the payment must close this gap (a proof or attestation that satisfies each id) before it verifies" }
+```
+
+**Pre-flight a mandate against a deployment, BEFORE paying:**
+```jsonc
+hsp_build_requirements { mode: "public" }
+→ { "hspVersion": "1", "domain": { "verifyingContract": "0x…01", "chainIds": [133] },
+    "signerProfiles": ["eip712-eoa.v1"], "policyRequiredCapabilities": [],
+    "adapters": [{ "adapterId": "adapter:evm-transfer", "adapterInstanceKey": "0x00…", "proofSchemaId": "0xe8e9…" }] }
+
+hsp_check_requirements { mandate, requirements: <the above> }
+→ { "ok": true, "chainOk": true, "missingRequiredCapabilities": [],
+    "note": "mandate covers the deployment’s required capabilities + a supported chain" }
+```
+`ok: true` → the payer can sign + pay. If `missingRequiredCapabilities` is non-empty, fix the mandate first
+(add the caps, or pay a deployment that doesn't require them).

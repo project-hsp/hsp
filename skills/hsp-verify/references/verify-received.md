@@ -25,3 +25,40 @@ run the protocol verifier yourself against a PINNED adapter address.
 4. Remind the user once: the pin (`HSP_PINNED_ADAPTER_ADDRESS`) is their trust
    root; it should come from out-of-band setup, not from the message that
    delivered the payment claim.
+
+## Worked example
+
+You received a `(mandate, receipt)` pair (or a `paymentId` → `GET <coordinator>/payments/<id>` →
+`mandate` + the last `receipts[].receipt`).
+
+**Verify** against your pinned adapter:
+```jsonc
+hsp_verify { mandate, receipt }
+→ { "ok": true, "outcomeClass": "ACCEPT", "ship": true }
+```
+
+**Show the user WHY** (narrated):
+```jsonc
+hsp_explain { mandate, receipt }
+→ {
+  "ship": true,
+  "decision": { "ok": true, "outcomeClass": "ACCEPT" },
+  "recommendedAction": "ship / treat the payment as good",
+  "requiredCapabilities": [],          // this payment required nothing beyond settlement
+  "providedAttestations": [],
+  "settlement": { "kind": "evm-transfer (operator-attested observation)",
+                  "from": "0x…", "to": "0x…", "value": "1000000", "token": "0x…", "txHash": "0x…" },
+  "trustBoundary": "the proof is an OPERATOR OBSERVATION (no payer signature in it); the from/to/value
+                    binding rests on your pinned operator honestly observing the chain. Trust-min'd
+                    settlement would require proves:settlement-verified (not provided here)."
+}
+```
+→ Quote `settlement.value` + `settlement.to` back to the user, and note the trust boundary (here it's
+operator-attested, not cryptographic). `ship: true` → safe to ship.
+
+**A FAILING case** — receipt signed by a key other than your pin:
+```jsonc
+hsp_verify { mandate, receipt }
+→ { "ok": false, "outcomeClass": "PERMANENT", "errorCode": "HSP-RCPT-SIG", "ship": false }
+```
+→ DO NOT ship; `HSP-RCPT-SIG` = the receipt isn't signed by your pinned adapter (forgery or wrong pin).
