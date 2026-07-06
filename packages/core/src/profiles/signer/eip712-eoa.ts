@@ -59,29 +59,46 @@ export const eip712EoaSigner: SignerProfile = {
   },
 
   async verify(payload: Hex, proof: Hex, mandateHash: Hex, _body: Mandate): Promise<SignerDecision> {
+    // errorDetail below is derived only from request inputs + the verifier's own digest —
+    // safe to surface, and lets an integrator self-diagnose domain/struct mismatches.
     let address: Address;
     try {
       address = decodeAbiParameters([{ type: 'address' }], payload)[0];
     } catch {
-      return { granted: false, errorCode: 'HSP-MAND-SIGNER' };
+      return { granted: false, errorCode: 'HSP-MAND-SIGNER', errorDetail: 'signer.payload must be abi.encode(address) (32 bytes)' };
     }
     // §4.1.6 strictness: 65-byte (r ‖ s ‖ v), v ∈ {27, 28}, low-s (EIP-2).
     if (proof.length !== 2 + 65 * 2) {
-      return { granted: false, errorCode: 'HSP-MAND-SIGNER' };
+      return {
+        granted: false,
+        errorCode: 'HSP-MAND-SIGNER',
+        errorDetail: `signerProof must be 65 bytes r||s||v (got ${(proof.length - 2) / 2})`,
+      };
     }
     const s = BigInt(`0x${proof.slice(66, 130)}`);
     const v = parseInt(proof.slice(130, 132), 16);
     if ((v !== 27 && v !== 28) || s > SECP256K1_N_DIV_2) {
-      return { granted: false, errorCode: 'HSP-MAND-SIGNER' };
+      return {
+        granted: false,
+        errorCode: 'HSP-MAND-SIGNER',
+        errorDetail: `signerProof v must be 27 or 28 and s low-s per EIP-2 (got v=${v})`,
+      };
     }
     let recovered: Address;
     try {
       recovered = await recoverAddress({ hash: mandateHash, signature: proof });
     } catch {
-      return { granted: false, errorCode: 'HSP-MAND-SIGNER' };
+      return { granted: false, errorCode: 'HSP-MAND-SIGNER', errorDetail: `signature recovery failed over digest ${mandateHash}` };
     }
     if (getAddress(recovered) === ZERO_ADDRESS || getAddress(recovered) !== getAddress(address)) {
-      return { granted: false, errorCode: 'HSP-MAND-SIGNER' };
+      return {
+        granted: false,
+        errorCode: 'HSP-MAND-SIGNER',
+        errorDetail:
+          `recovered ${getAddress(recovered)} over digest ${mandateHash}, but signer.payload declares ` +
+          `${getAddress(address)} — a digest mismatch usually means a different EIP-712 domain or Mandate ` +
+          `struct on the signing side (wire v1 = 11-field Mandate; see the deployment's wire changelog)`,
+      };
     }
     // SP6: resolvedSubject == decode(payload) when granted.
     return { granted: true, resolvedSubject: evmAddressPartyRef(address) };

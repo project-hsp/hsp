@@ -37,6 +37,7 @@ export interface AcceptDecision {
 export interface SignerDecision {
   granted: boolean;
   errorCode?: string;
+  errorDetail?: string; // informative free text (e.g. recovered-vs-declared signer); surfaced via AcceptDecision.errorDetail
   resolvedSubject?: PartyRef; // stable PartyRef when granted == true (SP6)
   signerStateHash?: Hex; // for stateDependent profiles (SP7)
 }

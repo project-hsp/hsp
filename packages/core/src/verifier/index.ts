@@ -134,7 +134,7 @@ export async function verifyPhaseA(
   const mandateHash = computeMandateHash(domain, body);
   const signerDecision = await signerEntry.profile.verify(body.signer.payload, mandate.signerProof, mandateHash, body);
   if (!signerDecision.granted) {
-    return { ok: false, decision: reject('PERMANENT', signerDecision.errorCode ?? 'HSP-MAND-SIGNER') };
+    return { ok: false, decision: reject('PERMANENT', signerDecision.errorCode ?? 'HSP-MAND-SIGNER', signerDecision.errorDetail) };
   }
   // step 4b — signer-state staleness (SP7); EOA static profiles skip
   if (signerEntry.profile.description.stateDependent) {
@@ -172,7 +172,7 @@ export async function verifyPhaseA(
     if (!grantDecision.granted || !grantDecision.resolvedSubject) {
       // a grant-principal signature failure is HSP-GRANT-SIGNER regardless of the profile's
       // own execution-side code (e.g. erc1271's HSP-MAND-SIGNER / -STATE-UNAVAILABLE).
-      return { ok: false, decision: reject('PERMANENT', 'HSP-GRANT-SIGNER', grantDecision.errorCode) };
+      return { ok: false, decision: reject('PERMANENT', 'HSP-GRANT-SIGNER', grantDecision.errorDetail ?? grantDecision.errorCode) };
     }
     // 4c-ii — the Agent the Principal authorized is the one who signed this execution (PartyRef)
     const agentEntry = policy.signerProfiles.get(g.agent.profileId);
