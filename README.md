@@ -117,6 +117,19 @@ real money; always confirm stablecoin + `adapterAddress` against `GET /chains` o
 
 → Addresses, decimals, and RPCs: see [the developer guide](docs/guide.md#82-chains) (§8.2).
 
+## Wire versions
+
+The signed wire has changed once; if you vendored this repo, know which side you are on:
+
+| Tag | Wire | Status |
+|---|---|---|
+| [`v0-mandatebody`](https://github.com/project-hsp/hsp/releases/tag/v0-mandatebody) | 8-field `MandateBody` | retired 2026-06-29 — signatures do **not** cross-verify with v1 |
+| [`v0.1-hackathon`](https://github.com/project-hsp/hsp/releases/tag/v0.1-hackathon) / `main` | 11-field `Mandate` + `DelegationGrant` | **current** |
+
+Symptom of a stale vendor: locally-valid signatures rejected as `HSP-MAND-SIGNER` — the
+rejection's `errorDetail` reports the recovered address and the verifier-side digest. Migration:
+update to `main` and re-sign (`git diff v0-mandatebody main -- packages/core` shows every change).
+
 ## Supply-chain posture
 
 Pinned exact versions everywhere; repo-wide `.npmrc ignore-scripts=true`

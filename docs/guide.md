@@ -826,7 +826,7 @@ Codes are *informative* (branch on `outcomeClass`; log codes). Grouped by prefix
 |---|---|
 | `HSP-MAND-DOMAIN` | EIP-712 domain / verifyingContract not accepted by this deployment |
 | `HSP-MAND-CHAINID` | zero or inconsistent chain id |
-| `HSP-MAND-SIGNER` | mandate signature invalid for the claimed signer |
+| `HSP-MAND-SIGNER` | mandate signature invalid for the claimed signer — `errorDetail` reports the recovered address and the verifier-side digest (a mismatch usually means a different EIP-712 domain or struct on the signing side) |
 | `HSP-MAND-SIGNER-PROFILE-UNKNOWN` | signer profile not admitted (POLICY) |
 | `HSP-MAND-SIGNER-PAYLOAD-MALFORMED` | signer reference undecodable |
 | `HSP-MAND-SIGNER-STATE-DRIFT` | signer-state anchor stale (e.g. rotated/revoked key) |
@@ -897,7 +897,7 @@ Codes are *informative* (branch on `outcomeClass`; log codes). Grouped by prefix
    moves no money; paying is done by `@hsp/sdk`, where the signer is yours to scope.)
 3. **Limit the blast radius.** The faucet rate-limits per address; team API keys are per-team —
    don't share them; they gate writes, not reads. Keep any payer key you hand a script or agent
-   funded only for small testnet amounts.
+   minimally funded — testnet where possible; on a mainnet, only what the payment needs.
 
 **Supply-chain posture of this repo** (inherit it): exact-pinned versions, repo-wide
 `ignore-scripts=true`, every new dependency vetted (typosquats, advisories, transitive tree) before
