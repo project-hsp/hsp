@@ -753,6 +753,10 @@ property.
 | x402 Facilitator | `:8789` | optional; conformant x402 v2 (`/supported`, `/verify`, `/settle`) |
 | Faucet (+ claim page) | `:8790` | testnet gas + USDC, per-address cooldown |
 
+One Coordinator serves **every chain in its `HSP_CHAINS` list** — a deployment can front both a testnet
+and a mainnet on the same endpoints, with the caller choosing per payment via the `chain` field. A
+deployment that settles x402 on a mainnet runs a second facilitator bound to that chain (its own gas key).
+
 ### 8.2 Chains
 
 | Name | Chain ID | Stablecoin | Notes |
